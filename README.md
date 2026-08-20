@@ -1,45 +1,62 @@
-# Zod to Mongoose schema converter
+# @parziva-1/zod-mongoose
 
-![NPM Version](https://img.shields.io/npm/v/%40zodyac%2Fzod-mongoose)
-![NPM Downloads](https://img.shields.io/npm/dw/%40zodyac%2Fzod-mongoose)
-![npm bundle size](https://img.shields.io/bundlephobia/min/%40zodyac%2Fzod-mongoose)
+![CI](https://github.com/parziva-1/zod-mongoose/actions/workflows/ci.yml/badge.svg)
+![NPM Version](https://img.shields.io/npm/v/%40parziva-1%2Fzod-mongoose)
+![License](https://img.shields.io/npm/l/%40parziva-1%2Fzod-mongoose)
 ![Test coverage](./badges/coverage.svg)
 
-This package provides a function to convert
-[zod](https://www.npmjs.com/package/zod) object to
-[mongoose](https://www.npmjs.com/package/mongoose) schema.
+Convert [Zod](https://www.npmjs.com/package/zod) object schemas into
+[Mongoose](https://www.npmjs.com/package/mongoose) schemas, keeping a single
+source of truth for both runtime validation and your database layer.
 
-> [!NOTE] This package is in early development stage. Please report any issues
-> you find and please expect API to change in minor versions.
+## Why this fork exists
+
+This is a fork of the excellent
+[`@zodyac/zod-mongoose`](https://www.npmjs.com/package/@zodyac/zod-mongoose)
+(upstream: [git-zodyac/mongoose](https://github.com/git-zodyac/mongoose)),
+created to add **Zod v4 support**. As of this writing, upstream is still on
+Zod v3 internals and has not published a v4-compatible release. This fork
+ports the schema introspection layer to Zod v4's runtime shape
+(`schema._zod.def`) while keeping the public API unchanged, so it's a drop-in
+replacement once your own Zod schemas are upgraded to v4.
+
+All credit for the original design and implementation goes to the upstream
+`zodyac` project and its contributors (see [LICENSE](./LICENSE)).
 
 ## Installation
 
 ```bash
-npm i @zodyac/zod-mongoose
-
-pnpm add @zodyac/zod-mongoose
-
-yarn add @zodyac/zod-mongoose
-
-bun add @zodyac/zod-mongoose
+npm install @parziva-1/zod-mongoose
+pnpm add @parziva-1/zod-mongoose
+yarn add @parziva-1/zod-mongoose
+bun add @parziva-1/zod-mongoose
 ```
 
-## Breaking changes
+Peer dependencies: `zod@^4.0.0` and `mongoose@^8.20.2 || ^9.0.0`.
 
-> [!WARNING]
-> If you were using `zId`, `zUUID`, `z.objectId()`, `z.mongoUUID()` before,
-> please replace those with `zId()` and `zUUID()`.
+## Migrating from `@zodyac/zod-mongoose`
 
-- `zId` is now `zId(ref?)`
-- `zUUID` is now `zUUID()`
+- **Package name**: import from `@parziva-1/zod-mongoose` instead of
+  `@zodyac/zod-mongoose`.
+- **Zod version**: you must be on `zod@^4.0.0`. Zod v3 is not supported at
+  all - stay on the upstream package (or this fork's `4.x` line, if you need
+  an intermediate step) until your schemas are migrated.
+- **Module format**: this package is **ESM-only** starting with v5 (no CJS
+  build). If you `require()` it from CommonJS, use a dynamic
+  `await import("@parziva-1/zod-mongoose")` instead.
+- **Public API is unchanged**: `zodSchema`, `zodSchemaRaw`, `extendZod`,
+  `zId`, `zUUID`, `.unique()`, `.sparse()`, `.ref()`, `.refPath()` all keep
+  their existing signatures.
 
-## Usage
+See [CHANGELOG.md](./CHANGELOG.md) for the full list of changes.
 
-First, extend Zod with `extendZod`, then create your zod schema:
+## Quick start
+
+First, extend Zod with `extendZod`, then create your Zod schema:
 
 ```typescript
 import { z } from "zod";
-import { extendZod } from "@zodyac/zod-mongoose";
+import { extendZod, zId, zUUID } from "@parziva-1/zod-mongoose";
 
 extendZod(z);
 
@@ -61,76 +78,81 @@ const zUser = z.object({
 });
 ```
 
-Then, convert it to mongoose schema and connect model:
+Then convert it to a Mongoose schema and connect a model:
 
 ```typescript
-import { zodSchema } from "@zodyac/zod-mongoose";
+import { zodSchema } from "@parziva-1/zod-mongoose";
 import { model } from "mongoose";
 
-const schema = zodSchema(zDoc);
+const schema = zodSchema(zUser);
 const userModel = model("User", schema);
 ```
 
-That's it! Now you can use your mongoose model as usual:
+That's it - now use your Mongoose model as usual:
 
 ```typescript
 userModel.find({ name: "John" });
 ```
 
-> [Note] `extendZod` should be called once for the whole application.
+> [!NOTE]
+> `extendZod` should be called once for the whole application.
 
 ## Features
 
-Full support list can be found in [SUPPORTED.md](./SUPPORTED.md):
+See [SUPPORTED.md](./SUPPORTED.md) for the full, authoritative type/feature
+support matrix. Summary:
 
-- ✅ Basic types
-- ✅ Nested objects and schemas
-- ✅ Arrays
-- ✅ Enums (strings only)
-- ✅ Default values
-- ✅ Maps
-- ✅ Dates
-- ✅ ObjectId
-- ✅ ObjectId references
-- ✅ ZodAny as SchemaTypes.Mixed
-- ✅ Validation using refinement for String, Number, Date
-- ✅ Unique for String, Number, Date, ObjectId and UUID
-- ✅ Sparse for String, Number, Date, ObjectId and UUID
+- Basic types (string, number, boolean, date)
+- Nested objects, subdocuments, and arrays
+- Tuples (`z.tuple()`, including `.rest()`), stored as a length/type-validated
+  array
+- Enums and native (TypeScript) enums
+- Literals (`z.literal()`), including Zod v4's multi-value form
+- Discriminated unions (`z.discriminatedUnion()`)
+- Intersections (`z.intersection()`) of two object shapes, merged into one
+  flat sub-schema
+- Recursive / self-referencing schemas (`z.lazy()`)
+- Fallback values (`z.catch()`)
+- Default values (static and factory-function forms)
+- Maps and records (records become `Map`)
+- ObjectId and UUID, with `ref` / `refPath` support
+- `ZodAny` and `ZodUnknown` as `SchemaTypes.Mixed`
+- Validation via `.refine()` for String, Number, Date - including a
+  refinement applied both before *and* after a single `.transform()`
+- `.unique()` / `.sparse()` for String, Number, Date, ObjectId, and UUID
+- `.transform()` / `z.preprocess()`
 
-- ⚠️ Record (Being converted to Map)
-- ⚠️ Unions (Not supported by mongoose, will pick first inner type)
-
-- ❗️ Intersection (not supported by mongoose)
-- ❗️ Set (not supported by mongoose)
-- ❗️ Indexes (not supported by zod)
-
-- ⏳ Regex validation (coming soon)
-- ⏳ instanceOf (coming soon)
+Known limitations: plain unions (`z.union()`) pick the first inner type
+(Mongoose has no native union type), and intersections only support merging
+two object-shape schemas - see [SUPPORTED.md](./SUPPORTED.md) for the full
+matrix and the design notes behind each non-obvious mapping (tuples,
+literals, discriminated unions, `z.lazy()`, `z.catch()`).
 
 ## Checking schemas
 
-To make sure nothing is missing, you can use `Schema.obj`:
+To make sure nothing is missing, inspect `Schema.obj`:
 
 ```typescript
-// schema is mongoose schema
+// schema is a mongoose schema
 console.log(schema.obj);
 ```
 
 ## Raw object
 
-If you want to get raw object from zod schema to modify it, you can use
-`zodSchemaRaw` function:
+If you want the raw object produced from a Zod schema so you can modify it
+before constructing the `Schema`, use `zodSchemaRaw`:
 
 ```typescript
-import { extendZod, zodSchemaRaw } from "@zodyac/zod-mongoose";
+import { extendZod, zodSchemaRaw } from "@parziva-1/zod-mongoose";
 import { model, Schema } from "mongoose";
+import { z } from "zod";
 
 extendZod(z);
 
-const schema = zodSchemaRaw(zDoc);
+const schema = zodSchemaRaw(zUser);
 schema.age.index = true;
 
-const model = model(
+const userModel = model(
   "User",
   new Schema(schema, {
     timestamps: true,
@@ -140,11 +162,11 @@ const model = model(
 
 ## ObjectID and UUID
 
-You can use `zId(ref?: string)` and `zUUID(ref?: string)` to describe fields as ObjectID and
-UUID and add reference to another collection:
+Use `zId(ref?: string)` and `zUUID(ref?: string)` to describe ObjectID and
+UUID fields, and to reference another collection:
 
 ```typescript
-import { extendZod } from "@zodyac/zod-mongoose";
+import { extendZod, zId, zUUID } from "@parziva-1/zod-mongoose";
 import { z } from "zod";
 
 extendZod(z);
@@ -170,101 +192,129 @@ const zUser = z.object({
 
 ## Validation
 
-You can use zod refinement to validate your mongoose models:
+Use Zod refinement to validate your Mongoose models:
 
 ```typescript
 import { z } from "zod";
-import { extendZod, zodSchema } from "@zodyac/zod-mongoose";
+import { extendZod, zodSchema } from "@parziva-1/zod-mongoose";
 
 extendZod(z);
 
 const zUser = z.object({
-  phone: z.string().refine(
-    (v) => v.match(/^\d{3}-\d{3}-\d{4}$/),
-    "Invalid phone number",
-  ),
+  phone: z
+    .string()
+    .refine((v) => /^\d{3}-\d{3}-\d{4}$/.test(v), "Invalid phone number"),
 });
 ```
 
 ## Unique fields
 
-To make a String, Number or Date unique, call `.unique()`:
+To make a String, Number, Date, ObjectId, or UUID field unique, call
+`.unique()`:
 
 ```typescript
-import { z } from "zod";
-import { extendZod, zodSchema } from "@zodyac/zod-mongoose";
-
-extendZod(z);
-
 const zUser = z.object({
   phone: z.string().unique(),
 });
-
-//
 ```
 
-## sparse fields
+## Sparse fields
 
-To make a String, Number or Date sparse, call `.sparse()`:
+To make a String, Number, Date, ObjectId, or UUID field sparse, call
+`.sparse()`:
 
 ```typescript
-import { z } from "zod";
-import { extendZod, zodSchema } from "@zodyac/zod-mongoose";
-
-extendZod(z);
-
 const zUser = z.object({
   email: z.string().sparse(),
-  // with unique
-  // email: z.string()..unique().sparse(),
+  // combine with unique:
+  // email: z.string().unique().sparse(),
 });
-
-//
 ```
+
 ## Warnings
 
 ### ZodUnion types
 
-Union types are not supported by mongoose. If you have a union type in your zod
-schema, it will be converted to it's inner type by default.
+Plain unions are not supported by Mongoose. A union field is converted to its
+*first* inner type:
 
 ```typescript
 const zUser = z.object({
   access: z.union([z.string(), z.number()]),
 });
 
-// Will become
-// {
-//   access: {
-//     type: String,
-//   },
-// }
+// Becomes:
+// { access: { type: String } }
 ```
 
-### ZodAny
+If you need every variant validated correctly, use `z.discriminatedUnion()`
+instead - see below.
 
-`ZodAny` is converted to `SchemaTypes.Mixed`. It's not recommended to use it,
-but it's there if you need it.
+### ZodDiscriminatedUnion
+
+`z.discriminatedUnion()` maps to `SchemaTypes.Mixed`, validated by re-parsing
+the assigned value with the original discriminated-union schema itself
+(Mongoose has no native way to represent a discriminated shape on a plain
+nested field):
+
+```typescript
+const zEvent = z.object({
+  payload: z.discriminatedUnion("type", [
+    z.object({ type: z.literal("email"), address: z.string() }),
+    z.object({ type: z.literal("sms"), phone: z.string() }),
+  ]),
+});
+```
+
+### ZodTuple
+
+`z.tuple()` maps to a Mongoose array of `Mixed`, with a `validate` enforcing
+exact arity (or a minimum arity, if you used `.rest()`) and the correct type
+at each position:
+
+```typescript
+const zPoint = z.object({
+  coords: z.tuple([z.number(), z.number()]),
+});
+```
+
+### ZodIntersection
+
+`z.intersection()` is supported only when merging two object-shape schemas -
+the two shapes are flattened into one Mongoose sub-schema. Intersecting
+non-object schemas (e.g. `z.string().and(z.number())`) throws, since there's
+no sane flat-field representation for it.
+
+### ZodLazy
+
+`z.lazy()` supports recursive/self-referencing schemas (e.g. a comment with
+nested replies of the same shape) by unrolling the recursive getter up to a
+fixed depth (5 levels), then falling back to `Mixed` beyond that - Mongoose
+has no native concept of an infinitely recursive embedded subdocument.
+
+### ZodAny / ZodUnknown
+
+Both are converted to `SchemaTypes.Mixed`. Prefer a more specific type when
+possible.
 
 ### ZodRecord
 
-`ZodRecord` is converted to `Map` type. It's not recommended to use it, but it's
-there if you need it.
+`ZodRecord` is converted to `Map`. Prefer `z.map()` directly when possible.
 
 ## Contributing
 
-Feel free to open issues and pull requests! Here's a quick guide to get you
-started:
+Feel free to open issues and pull requests!
 
 - Fork the repository
-- Install linter and formatter for VSCode: Biome
-- Install dependencies: `npm i`
-- Make changes
-- Run tests: `npm test`
-- Run linter: `npm run lint` (fix with `npm run lint:fix`)
+- Install the [Biome](https://biomejs.dev/) VS Code extension
+- Install dependencies: `npm install`
+- Make your changes
+- Run the full check suite: `npm run check` (lint, typecheck, test, build,
+  attw, publint)
 - Commit and push your changes
 - Open a pull request
 
 ## License
 
-MIT
+MIT - see [LICENSE](./LICENSE). Includes the original upstream copyright
+notice plus this fork's additions.

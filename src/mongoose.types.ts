@@ -3,9 +3,7 @@ import type { ZodType, z } from "zod";
 
 export namespace zm {
   export interface zID
-    extends z.ZodUnion<
-      [z.ZodString, z.ZodType<Types.ObjectId, z.ZodTypeDef, Types.ObjectId>]
-    > {
+    extends z.ZodUnion<[z.ZodString, z.ZodType<Types.ObjectId, Types.ObjectId>]> {
     __zm_type: "ObjectId";
     __zm_ref?: string;
     __zm_refPath?: string;
@@ -17,7 +15,7 @@ export namespace zm {
   }
 
   export interface zUUID
-    extends z.ZodUnion<[z.ZodString, z.ZodType<Types.UUID, z.ZodTypeDef, Types.UUID>]> {
+    extends z.ZodUnion<[z.ZodString, z.ZodType<Types.UUID, Types.UUID>]> {
     __zm_type: "UUID";
     __zm_ref?: string;
     __zm_refPath?: string;
@@ -33,10 +31,12 @@ export namespace zm {
     required: boolean;
     // Default value can either be the direct value, or it's getter function
     default?: mDefault<T>;
-    validate?: {
-      validator: (v: T) => boolean;
-      message?: string;
-    };
+    validate?: EffectValidator<T> | EffectValidator<T>[];
+    // Mongoose setter transform, used to emulate `z.catch()`'s "fall back to
+    // a value when parsing the input fails" semantics (see `parseField`'s
+    // `catch` branch) - Mongoose's own `default` only kicks in when a path is
+    // `undefined`, not when a present value fails validation.
+    set?: (v: unknown) => T;
   }
 
   export interface mString extends _Field<string> {
@@ -135,4 +135,12 @@ export namespace zm {
     validator: (v: T) => boolean;
     message?: string;
   };
+  /**
+   * A field's `validate` option accepts either a single validator (the
+   * common case) or an array of them - Mongoose runs every entry in the
+   * array and reports all failing messages. Used when a field carries more
+   * than one `.refine()` check (e.g. one before and one after a
+   * `.transform()`).
+   */
+  export type mValidate<T> = EffectValidator<T> | EffectValidator<T>[];
 }

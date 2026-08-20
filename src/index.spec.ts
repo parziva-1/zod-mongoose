@@ -1,4 +1,4 @@
-import { Schema, SchemaTypes, Types } from "mongoose";
+import { model, Schema, SchemaTypes, Types } from "mongoose";
 import { z } from "zod";
 import zodSchema, { extendZod, zId, zodSchemaRaw, zUUID } from "./index";
 
@@ -319,12 +319,15 @@ describe("Unsupported types", () => {
     expect((<any>obj.field).type).toBe(String);
   });
 
-  test("Unsupported type should throw an error", () => {
+  test("z.unknown() is supported and maps to Mixed", () => {
+    // Previously unsupported (threw); z.unknown() now maps to Mixed the
+    // same way z.any() does.
     const schema = z.object({
       field: z.unknown(),
     });
 
-    expect(() => zodSchema(schema)).toThrow();
+    const { obj } = zodSchema(schema);
+    expect((<any>obj.field).type).toBe(SchemaTypes.Mixed);
   });
 
   test("Unsupported Map key should not throw an error", () => {
@@ -631,6 +634,88 @@ describe("Validation", () => {
   });
 });
 
+describe("Default values", () => {
+  test("Static default value should be preserved for string fields", () => {
+    const zObj = z.object({
+      role: z.string().default("member"),
+    });
+    const schema = zodSchema(zObj);
+
+    expect((<any>schema.obj.role).type).toBe(String);
+    expect((<any>schema.obj.role).required).toBe(true);
+    expect(typeof (<any>schema.obj.role).default).toBe("function");
+    expect((<any>schema.obj.role).default()).toBe("member");
+  });
+
+  test("Factory-function default should be re-evaluated on every call", () => {
+    let counter = 0;
+    const zObj = z.object({
+      seq: z.number().default(() => ++counter),
+    });
+    const schema = zodSchema(zObj);
+
+    expect(typeof (<any>schema.obj.seq).default).toBe("function");
+    expect((<any>schema.obj.seq).default()).toBe(1);
+    expect((<any>schema.obj.seq).default()).toBe(2);
+    expect((<any>schema.obj.seq).default()).toBe(3);
+  });
+
+  test("Factory-function default returning an array should produce a fresh array per call", () => {
+    const zObj = z.object({
+      tags: z.array(z.string()).default(() => ["seed"]),
+    });
+    const schema = zodSchema(zObj);
+
+    const first = (<any>schema.obj.tags).default();
+    const second = (<any>schema.obj.tags).default();
+
+    expect(first).toEqual(["seed"]);
+    expect(first).not.toBe(second);
+  });
+});
+
+describe("Optional + nullable combinations", () => {
+  test("optional().nullable() should be not required with a null default", () => {
+    const zObj = z.object({
+      note: z.string().optional().nullable(),
+    });
+    const schema = zodSchema(zObj);
+
+    expect((<any>schema.obj.note).type).toBe(String);
+    expect((<any>schema.obj.note).required).toBe(false);
+  });
+
+  test("nullable().optional() should be not required with a null default", () => {
+    const zObj = z.object({
+      note: z.string().nullable().optional(),
+    });
+    const schema = zodSchema(zObj);
+
+    expect((<any>schema.obj.note).type).toBe(String);
+    expect((<any>schema.obj.note).required).toBe(false);
+  });
+
+  test("nullable() with an explicit default should keep the provided default over null", () => {
+    const zObj = z.object({
+      status: z.string().nullable().default("active"),
+    });
+    const schema = zodSchema(zObj);
+
+    expect((<any>schema.obj.status).required).toBe(false);
+    expect((<any>schema.obj.status).default()).toBe("active");
+  });
+
+  test("bare nullable() without a default falls back to a null default", () => {
+    const zObj = z.object({
+      status: z.string().nullable(),
+    });
+    const schema = zodSchema(zObj);
+
+    expect((<any>schema.obj.status).required).toBe(false);
+    expect((<any>schema.obj.status).default()).toBe(null);
+  });
+});
+
 describe("Preprocess and transform effects", () => {
   test("Preprocess effects", () => {
     const zToNumberPreprocess = z.object({
@@ -666,5 +751,323 @@ describe("Preprocess and transform effects", () => {
 
     expect((<any>upcaseTransformSchema.obj.name).type).toBe(String);
     expect((<any>numberAddTransformSchema.obj.count).type).toBe(Number);
+  });
+
+  test("Refine-before-transform is preserved", () => {
+    const zObj = z.object({
+      value: z
+        .string()
+        .refine((v) => v.length > 2, "too short before")
+        .transform((v) => v.toUpperCase()),
+    });
+
+    const schema = zodSchema(zObj);
+
+    expect((<any>schema.obj.value).validate).toBeDefined();
+    expect((<any>schema.obj.value).validate.validator).toBeInstanceOf(Function);
+    expect((<any>schema.obj.value).validate.message).toBe("too short before");
+  });
+
+  test("Refine-after-transform is preserved", () => {
+    const zObj = z.object({
+      value: z
+        .string()
+        .transform((v) => v.toUpperCase())
+        .refine((v) => v.length < 10, "too long after"),
+    });
+
+    const schema = zodSchema(zObj);
+
+    expect((<any>schema.obj.value).validate).toBeDefined();
+    expect((<any>schema.obj.value).validate.validator).toBeInstanceOf(Function);
+    expect((<any>schema.obj.value).validate.message).toBe("too long after");
+  });
+
+  test("refine-before-and-after-transform: both refinements are enforced", () => {
+    // A schema refined both before AND after a single `.transform()` used to
+    // silently drop the post-transform refinement (see CHANGELOG / git
+    // history for the "KNOWN GAP" this test used to pin). `parseField` now
+    // collects `.refine()` checks from every node it walks across a
+    // `ZodPipe` and merges them into a `validate` array, so Mongoose runs
+    // both. Prove it at the Mongoose validation level, not just structurally.
+    const zObj = z.object({
+      value: z
+        .string()
+        .refine((v) => v.length > 2, "too short before")
+        .transform((v) => v.toUpperCase())
+        .refine((v) => v.length < 10, "too long after"),
+    });
+
+    const schema = zodSchema(zObj);
+    const Model = model("RefineBeforeAndAfterTransform", schema);
+
+    expect(Array.isArray((<any>schema.obj.value).validate)).toBe(true);
+    expect((<any>schema.obj.value).validate).toHaveLength(2);
+
+    // Fails the pre-transform check ("ab" has length 2, not > 2).
+    const tooShort = new Model({ value: "ab" });
+    const shortErr = tooShort.validateSync();
+    expect(shortErr?.errors.value?.message).toContain("too short before");
+
+    // Passes the pre-transform check, but the transformed (upper-cased)
+    // value is too long for the post-transform check to accept.
+    const tooLong = new Model({ value: "abcdefghij" });
+    const longErr = tooLong.validateSync();
+    expect(longErr?.errors.value?.message).toContain("too long after");
+
+    // Passes both checks.
+    const ok = new Model({ value: "abc" });
+    expect(ok.validateSync()).toBeUndefined();
+  });
+});
+
+describe("z.unknown() / z.any()", () => {
+  test("both map to Mixed and accept any value", () => {
+    const zObj = z.object({
+      a: z.any(),
+      u: z.unknown(),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("AnyUnknownMixed", schema);
+
+    expect((<any>schema.obj.a).type).toBe(SchemaTypes.Mixed);
+    expect((<any>schema.obj.u).type).toBe(SchemaTypes.Mixed);
+
+    const doc = new Model({ a: { nested: true }, u: [1, 2, 3] });
+    expect(doc.validateSync()).toBeUndefined();
+  });
+});
+
+describe("z.tuple()", () => {
+  test("enforces per-position types and exact arity", () => {
+    const zObj = z.object({
+      point: z.tuple([z.number(), z.number(), z.string()]),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("TupleFixedArity", schema);
+
+    expect(Array.isArray((<any>schema.obj.point).type)).toBe(true);
+
+    const valid = new Model({ point: [1, 2, "label"] });
+    expect(valid.validateSync()).toBeUndefined();
+
+    const wrongType = new Model({ point: [1, "two", "label"] });
+    expect(wrongType.validateSync()?.errors.point).toBeDefined();
+
+    const wrongLength = new Model({ point: [1, 2] });
+    expect(wrongLength.validateSync()?.errors.point).toBeDefined();
+
+    const tooLong = new Model({ point: [1, 2, "label", "extra"] });
+    expect(tooLong.validateSync()?.errors.point).toBeDefined();
+  });
+
+  test("supports a rest element for variable-length tuples", () => {
+    const zObj = z.object({
+      row: z.tuple([z.string()]).rest(z.number()),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("TupleWithRest", schema);
+
+    const valid = new Model({ row: ["label", 1, 2, 3] });
+    expect(valid.validateSync()).toBeUndefined();
+
+    const minimal = new Model({ row: ["label"] });
+    expect(minimal.validateSync()).toBeUndefined();
+
+    const badRest = new Model({ row: ["label", 1, "not-a-number"] });
+    expect(badRest.validateSync()?.errors.row).toBeDefined();
+
+    const missingRequired = new Model({ row: [] });
+    expect(missingRequired.validateSync()?.errors.row).toBeDefined();
+  });
+});
+
+describe("z.literal()", () => {
+  test("single string literal maps to an enum-constrained String", () => {
+    const zObj = z.object({
+      kind: z.literal("admin"),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("SingleStringLiteral", schema);
+
+    expect((<any>schema.obj.kind).type).toBe(String);
+    expect((<any>schema.obj.kind).enum).toEqual(["admin"]);
+
+    expect(new Model({ kind: "admin" }).validateSync()).toBeUndefined();
+    expect(new Model({ kind: "user" }).validateSync()?.errors.kind).toBeDefined();
+  });
+
+  test("multi-value string literal enforces membership", () => {
+    const zObj = z.object({
+      status: z.literal(["draft", "published"]),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("MultiStringLiteral", schema);
+
+    expect(new Model({ status: "draft" }).validateSync()).toBeUndefined();
+    expect(new Model({ status: "published" }).validateSync()).toBeUndefined();
+    expect(new Model({ status: "archived" }).validateSync()?.errors.status).toBeDefined();
+  });
+
+  test("numeric and boolean literals validate exact-match membership", () => {
+    const zObj = z.object({
+      version: z.literal(2),
+      flag: z.literal(true),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("NumberBooleanLiteral", schema);
+
+    expect((<any>schema.obj.version).type).toBe(Number);
+    expect((<any>schema.obj.flag).type).toBe(Boolean);
+
+    expect(new Model({ version: 2, flag: true }).validateSync()).toBeUndefined();
+    expect(
+      new Model({ version: 3, flag: true }).validateSync()?.errors.version,
+    ).toBeDefined();
+  });
+});
+
+describe("z.discriminatedUnion()", () => {
+  const zShape = z.object({
+    payload: z.discriminatedUnion("type", [
+      z.object({ type: z.literal("email"), address: z.string() }),
+      z.object({ type: z.literal("sms"), phone: z.string() }),
+    ]),
+  });
+
+  test("maps to Mixed and validates against whichever variant matches the discriminant", () => {
+    const schema = zodSchema(zShape);
+    const Model = model("DiscriminatedUnionPayload", schema);
+
+    expect((<any>schema.obj.payload).type).toBe(SchemaTypes.Mixed);
+
+    const email = new Model({ payload: { type: "email", address: "a@b.com" } });
+    expect(email.validateSync()).toBeUndefined();
+
+    const sms = new Model({ payload: { type: "sms", phone: "123" } });
+    expect(sms.validateSync()).toBeUndefined();
+  });
+
+  test("rejects a payload whose fields don't match its own discriminant variant", () => {
+    const schema = zodSchema(zShape);
+    const Model = model("DiscriminatedUnionPayloadInvalid", schema);
+
+    // `type: "email"` but shaped like the "sms" variant.
+    const mismatched = new Model({ payload: { type: "email", phone: "123" } });
+    expect(mismatched.validateSync()?.errors.payload).toBeDefined();
+
+    const unknownVariant = new Model({ payload: { type: "carrier-pigeon" } });
+    expect(unknownVariant.validateSync()?.errors.payload).toBeDefined();
+  });
+});
+
+describe("z.intersection()", () => {
+  test("merges two object shapes into one flat sub-schema", () => {
+    const zObj = z.object({
+      profile: z.intersection(
+        z.object({ name: z.string() }),
+        z.object({ age: z.number() }),
+      ),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("IntersectionMerge", schema);
+
+    expect(Object.keys(<any>schema.obj.profile)).toEqual(
+      expect.arrayContaining(["name", "age"]),
+    );
+    expect((<any>schema.obj.profile).name.type).toBe(String);
+    expect((<any>schema.obj.profile).age.type).toBe(Number);
+
+    const valid = new Model({ profile: { name: "Ada", age: 30 } });
+    expect(valid.validateSync()).toBeUndefined();
+
+    const missingField = new Model({ profile: { name: "Ada" } });
+    expect(missingField.validateSync()?.errors["profile.age"]).toBeDefined();
+  });
+
+  test("non-object intersections throw a clear, documented error", () => {
+    const zObj = z.object({
+      value: z.intersection(z.string(), z.number()),
+    });
+
+    expect(() => zodSchema(zObj)).toThrow(/Unsupported intersection/);
+  });
+});
+
+describe("z.lazy()", () => {
+  test("supports a recursive comment-with-replies document shape", () => {
+    interface Comment {
+      text: string;
+      replies?: Comment[];
+    }
+
+    const CommentSchema: z.ZodType<Comment> = z.lazy(() =>
+      z.object({
+        text: z.string(),
+        replies: z.array(CommentSchema).optional(),
+      }),
+    );
+
+    const zObj = z.object({ root: CommentSchema });
+    const schema = zodSchema(zObj);
+    const Model = model("LazyRecursiveComment", schema);
+
+    const doc = new Model({
+      root: {
+        text: "top level",
+        replies: [
+          { text: "reply 1", replies: [{ text: "nested reply" }] },
+          { text: "reply 2" },
+        ],
+      },
+    });
+
+    expect(doc.validateSync()).toBeUndefined();
+    expect(doc.toObject().root.replies[0].replies[0].text).toBe("nested reply");
+  });
+
+  test("does not recurse infinitely and bottoms out past the depth limit", () => {
+    interface Node {
+      value: number;
+      child?: Node;
+    }
+    const NodeSchema: z.ZodType<Node> = z.lazy(() =>
+      z.object({
+        value: z.number(),
+        child: NodeSchema.optional(),
+      }),
+    );
+
+    const zObj = z.object({ root: NodeSchema });
+    // Should terminate (not stack overflow) even though the schema is
+    // infinitely self-referencing.
+    expect(() => zodSchema(zObj)).not.toThrow();
+  });
+});
+
+describe("z.catch()", () => {
+  test("falls back to the catch value when assigned input fails to parse", () => {
+    const zObj = z.object({
+      count: z.number().catch(0),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("CatchStaticFallback", schema);
+
+    const good = new Model({ count: 5 });
+    expect(good.count).toBe(5);
+
+    const bad = new Model({ count: "not-a-number" as unknown as number });
+    expect(bad.count).toBe(0);
+  });
+
+  test("supports a fallback function that sees the original failing value", () => {
+    const zObj = z.object({
+      count: z.number().catch((ctx) => (typeof ctx.value === "string" ? -1 : 0)),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("CatchFunctionFallback", schema);
+
+    const bad = new Model({ count: "oops" as unknown as number });
+    expect(bad.count).toBe(-1);
   });
 });
