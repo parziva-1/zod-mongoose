@@ -5,6 +5,7 @@ import type {
   ZodDate,
   ZodDefault,
   ZodEnum,
+  ZodLiteral,
   ZodMap,
   ZodNullable,
   ZodNumber,
@@ -45,4 +46,5 @@ export interface IAsserts {
    */
   pipe(f: ZodType): f is ZodPipe;
   tuple(f: ZodType): f is ZodTuple;
+  literal(f: ZodType): f is ZodLiteral;
 }

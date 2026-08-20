@@ -75,4 +75,8 @@ export const zmAssert: IAsserts = {
   tuple(f: ZodType): f is any {
     return f._zod.def.type === "tuple";
   },
+
+  literal(f: ZodType): f is any {
+    return f._zod.def.type === "literal";
+  },
 };

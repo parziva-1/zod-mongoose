@@ -881,3 +881,48 @@ describe("z.tuple()", () => {
     expect(missingRequired.validateSync()?.errors.row).toBeDefined();
   });
 });
+
+describe("z.literal()", () => {
+  test("single string literal maps to an enum-constrained String", () => {
+    const zObj = z.object({
+      kind: z.literal("admin"),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("SingleStringLiteral", schema);
+
+    expect((<any>schema.obj.kind).type).toBe(String);
+    expect((<any>schema.obj.kind).enum).toEqual(["admin"]);
+
+    expect(new Model({ kind: "admin" }).validateSync()).toBeUndefined();
+    expect(new Model({ kind: "user" }).validateSync()?.errors.kind).toBeDefined();
+  });
+
+  test("multi-value string literal enforces membership", () => {
+    const zObj = z.object({
+      status: z.literal(["draft", "published"]),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("MultiStringLiteral", schema);
+
+    expect(new Model({ status: "draft" }).validateSync()).toBeUndefined();
+    expect(new Model({ status: "published" }).validateSync()).toBeUndefined();
+    expect(new Model({ status: "archived" }).validateSync()?.errors.status).toBeDefined();
+  });
+
+  test("numeric and boolean literals validate exact-match membership", () => {
+    const zObj = z.object({
+      version: z.literal(2),
+      flag: z.literal(true),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("NumberBooleanLiteral", schema);
+
+    expect((<any>schema.obj.version).type).toBe(Number);
+    expect((<any>schema.obj.flag).type).toBe(Boolean);
+
+    expect(new Model({ version: 2, flag: true }).validateSync()).toBeUndefined();
+    expect(
+      new Model({ version: 3, flag: true }).validateSync()?.errors.version,
+    ).toBeDefined();
+  });
+});

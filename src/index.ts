@@ -336,6 +336,11 @@ function parseField<T>(
     return parseTuple(field, required, def);
   }
 
+  if (zmAssert.literal(field)) {
+    const values = (field as any)._zod.def.values as unknown[];
+    return parseLiteral(values, required, def);
+  }
+
   if (zmAssert.mapOrRecord(field)) {
     const mapField = field as any;
     return parseMap(
@@ -576,6 +581,55 @@ function parseTuple(field: ZodType, required = true, def?: unknown): zm.mArray<u
     default: def as zm.mDefault<unknown[]>,
     required,
     validate: { validator, message },
+  };
+}
+
+/**
+ * Maps `z.literal()` to the closest native Mongoose representation of its
+ * value(s):
+ *  - all-string values -> `String` with Mongoose's native `enum` constraint
+ *  - all-number / all-boolean values -> that primitive type plus a
+ *    `validate` enforcing membership (Mongoose has no native `enum` for
+ *    non-string types)
+ *  - anything else (mixed types, or types Mongoose has no primitive for,
+ *    e.g. `bigint`) -> `Mixed` plus the same membership `validate`
+ * `z.literal()` supports multiple values in Zod v4 (`z.literal(["a", "b"])`),
+ * which is why this always validates against the full `values` array rather
+ * than assuming a single value.
+ */
+function parseLiteral(values: unknown[], required = true, def?: unknown): zm.mField {
+  const types = new Set(values.map((v) => typeof v));
+  const message = `Value must be one of: ${values.map((v) => JSON.stringify(v)).join(", ")}`;
+
+  if (types.size === 1 && types.has("string")) {
+    return parseEnum(values as string[], required, def as zm.mDefault<string>);
+  }
+
+  if (types.size === 1 && types.has("number")) {
+    return {
+      type: Number,
+      required,
+      unique: false,
+      sparse: false,
+      default: def as zm.mDefault<number>,
+      validate: { validator: (v: number) => values.includes(v), message },
+    };
+  }
+
+  if (types.size === 1 && types.has("boolean")) {
+    return {
+      type: Boolean,
+      required,
+      default: def as zm.mDefault<boolean>,
+      validate: { validator: (v: boolean) => values.includes(v), message },
+    };
+  }
+
+  return {
+    type: SchemaTypes.Mixed,
+    required,
+    default: def as unknown as any,
+    validate: { validator: (v: unknown) => values.includes(v), message },
   };
 }
 
