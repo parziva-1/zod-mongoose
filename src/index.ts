@@ -99,25 +99,41 @@ function parseObject<T extends ZodRawShape>(obj: ZodObject<T>): zm._Schema<T>;
 function parseObject<T extends ZodRawShape>(
   obj: ZodObject<T>,
   required: true,
+  def?: undefined,
 ): zm._Schema<T>;
 function parseObject<T extends ZodRawShape>(
   obj: ZodObject<T>,
+  required: true,
+  def: zm.mDefault<T>,
+): zm.mSubdocument<T>;
+function parseObject<T extends ZodRawShape>(
+  obj: ZodObject<T>,
   required: false,
+  def?: zm.mDefault<T>,
 ): zm.mSubdocument<T>;
 function parseObject<T extends ZodRawShape>(
   obj: ZodObject<T>,
   required: boolean,
+  def?: zm.mDefault<T>,
 ): zm._Schema<T> | zm.mSubdocument<T>;
 function parseObject<T extends ZodRawShape>(
   obj: ZodObject<T>,
   required = true,
+  def?: zm.mDefault<T>,
 ): zm._Schema<T> | zm.mSubdocument<T> {
   const object: any = parseShape(obj.shape as ZodRawShape);
 
-  if (!required) {
+  // A nested `z.object().default({})` needs its default threaded onto the
+  // Mongoose subdocument path itself - Mongoose has no way to express a
+  // default for a bare nested-shape object, so as soon as a `def` is
+  // present the object must be wrapped in the `{ type, default, required }`
+  // form (the same form already used for a non-required/optional object),
+  // even when the object itself is otherwise required.
+  if (!required || typeof def !== "undefined") {
     return {
       type: object,
-      required: false,
+      required,
+      default: def,
     } as zm.mSubdocument<T>;
   }
 
@@ -225,7 +241,7 @@ function parseField<T>(
   }
 
   if (zmAssert.object(field)) {
-    return parseObject(field as ZodObject<any>, required);
+    return parseObject(field as ZodObject<any>, required, def as zm.mDefault<any>);
   }
 
   // Combine any `.refine()` checks found directly on this node with any

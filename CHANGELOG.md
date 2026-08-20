@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `parseUUID` now accept and apply a `default`. (Also fixed an adjacent
   copy-paste bug where the UUID branch read `__zm_unique` twice instead of
   `__zm_sparse` for its `sparse` flag.)
+- **A nested `z.object().default({})` now applies its Mongoose default.**
+  The `ZodObject` branch of `parseField` never accepted or forwarded `def`
+  either, so e.g. `metadata: SomeSchema.default({})` always ended up
+  `undefined`. `parseObject` now accepts a `def` and wraps the subdocument
+  in the `{ type, default, required }` form whenever one is present.
 
 ## 5.0.0 - 2026-08-20
 ### Breaking

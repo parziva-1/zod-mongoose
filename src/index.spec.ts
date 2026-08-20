@@ -1126,4 +1126,30 @@ describe("Regression: production default-value bugs", () => {
     const UuidModel = model("Bug2ZUuidNullableDefault", zodSchema(zUuidObj));
     expect(new UuidModel({}).deviceId).toBeNull();
   });
+
+  test("bug #3 - a nested z.object().default({}) applies the Mongoose default (production `metadata` shape)", () => {
+    const NotificationMetadataSchema = z.object({
+      projectId: z.string().optional(),
+      taskId: z.string().optional(),
+    });
+
+    const zObj = z.object({
+      title: z.string(),
+      metadata: NotificationMetadataSchema.default({}),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("Bug3NestedObjectDefault", schema);
+
+    const doc = new Model({ title: "hello" });
+    expect(doc.validateSync()).toBeUndefined();
+    expect(doc.metadata).toBeDefined();
+    expect(doc.metadata.projectId).toBeUndefined();
+    expect(doc.metadata.taskId).toBeUndefined();
+
+    const withValue = new Model({
+      title: "hi",
+      metadata: { projectId: "p1" },
+    });
+    expect(withValue.metadata.projectId).toBe("p1");
+  });
 });
