@@ -104,19 +104,29 @@ support matrix. Summary:
 
 - Basic types (string, number, boolean, date)
 - Nested objects, subdocuments, and arrays
+- Tuples (`z.tuple()`, including `.rest()`), stored as a length/type-validated
+  array
 - Enums and native (TypeScript) enums
+- Literals (`z.literal()`), including Zod v4's multi-value form
+- Discriminated unions (`z.discriminatedUnion()`)
+- Intersections (`z.intersection()`) of two object shapes, merged into one
+  flat sub-schema
+- Recursive / self-referencing schemas (`z.lazy()`)
+- Fallback values (`z.catch()`)
 - Default values (static and factory-function forms)
 - Maps and records (records become `Map`)
 - ObjectId and UUID, with `ref` / `refPath` support
-- `ZodAny` as `SchemaTypes.Mixed`
-- Validation via `.refine()` for String, Number, Date
+- `ZodAny` and `ZodUnknown` as `SchemaTypes.Mixed`
+- Validation via `.refine()` for String, Number, Date - including a
+  refinement applied both before *and* after a single `.transform()`
 - `.unique()` / `.sparse()` for String, Number, Date, ObjectId, and UUID
 - `.transform()` / `z.preprocess()`
 
-Known limitations: unions pick the first inner type (Mongoose has no native
-union type), and a refinement applied both before *and* after a
-`.transform()` currently only keeps the pre-transform refinement - see
-[SUPPORTED.md](./SUPPORTED.md) for details.
+Known limitations: plain unions (`z.union()`) pick the first inner type
+(Mongoose has no native union type), and intersections only support merging
+two object-shape schemas - see [SUPPORTED.md](./SUPPORTED.md) for the full
+matrix and the design notes behind each non-obvious mapping (tuples,
+literals, discriminated unions, `z.lazy()`, `z.catch()`).
 
 ## Checking schemas
 
@@ -225,7 +235,7 @@ const zUser = z.object({
 
 ### ZodUnion types
 
-Unions are not supported by Mongoose. A union field is converted to its
+Plain unions are not supported by Mongoose. A union field is converted to its
 *first* inner type:
 
 ```typescript
@@ -237,10 +247,55 @@ const zUser = z.object({
 // { access: { type: String } }
 ```
 
-### ZodAny
+If you need every variant validated correctly, use `z.discriminatedUnion()`
+instead - see below.
 
-`ZodAny` is converted to `SchemaTypes.Mixed`. Prefer a more specific type
-when possible.
+### ZodDiscriminatedUnion
+
+`z.discriminatedUnion()` maps to `SchemaTypes.Mixed`, validated by re-parsing
+the assigned value with the original discriminated-union schema itself
+(Mongoose has no native way to represent a discriminated shape on a plain
+nested field):
+
+```typescript
+const zEvent = z.object({
+  payload: z.discriminatedUnion("type", [
+    z.object({ type: z.literal("email"), address: z.string() }),
+    z.object({ type: z.literal("sms"), phone: z.string() }),
+  ]),
+});
+```
+
+### ZodTuple
+
+`z.tuple()` maps to a Mongoose array of `Mixed`, with a `validate` enforcing
+exact arity (or a minimum arity, if you used `.rest()`) and the correct type
+at each position:
+
+```typescript
+const zPoint = z.object({
+  coords: z.tuple([z.number(), z.number()]),
+});
+```
+
+### ZodIntersection
+
+`z.intersection()` is supported only when merging two object-shape schemas -
+the two shapes are flattened into one Mongoose sub-schema. Intersecting
+non-object schemas (e.g. `z.string().and(z.number())`) throws, since there's
+no sane flat-field representation for it.
+
+### ZodLazy
+
+`z.lazy()` supports recursive/self-referencing schemas (e.g. a comment with
+nested replies of the same shape) by unrolling the recursive getter up to a
+fixed depth (5 levels), then falling back to `Mixed` beyond that - Mongoose
+has no native concept of an infinitely recursive embedded subdocument.
+
+### ZodAny / ZodUnknown
+
+Both are converted to `SchemaTypes.Mixed`. Prefer a more specific type when
+possible.
 
 ### ZodRecord
 

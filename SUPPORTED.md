@@ -17,12 +17,24 @@ These types and features are fully supported and tested:
 - ✅ Boolean (ZodBoolean)
 - ✅ Date (ZodDate)
 - ✅ Null (ZodNull)
-- ✅ Mixed (ZodAny)
+- ✅ Mixed (ZodAny, ZodUnknown)
 - ✅ ObjectId (custom, `zId()`)
 - ✅ UUID (custom, `zUUID()`)
 - ✅ Nested objects and schemas (ZodObject)
 - ✅ Arrays (ZodArray)
+- ✅ Tuples (ZodTuple), including a `.rest()` element - see "Design notes"
+  below for how this maps onto Mongoose
 - ✅ Enums, including native (TypeScript) enums (ZodEnum)
+- ✅ Literals (ZodLiteral), including Zod v4's multi-value form
+  (`z.literal(["a", "b"])`) - see "Design notes" below
+- ✅ Discriminated unions (ZodDiscriminatedUnion) - see "Design notes" below
+- ✅ Intersections (ZodIntersection) of two object-shape schemas, merged into
+  one flat Mongoose sub-schema
+- ✅ Recursive / self-referencing schemas (`z.lazy()`), e.g. a comment type
+  with nested replies of the same shape - see "Design notes" below for the
+  depth cap
+- ✅ Fallback values (`z.catch()`), both a static value and a function
+  receiving the original failing input
 - ✅ Default values (ZodDefault), both a static value and a factory function
   (`() => value`), re-evaluated on every access
 - ✅ Maps (ZodMap) and Records (ZodRecord, converted to `Map`)
@@ -34,9 +46,9 @@ These types and features are fully supported and tested:
   - `String`,
   - `Number`,
   - `Date`
-  - A refinement applied before OR after a single `.transform()` is
-    preserved. See the "Danger zone" note below for the one combined case
-    that is not.
+  - A refinement applied before AND after a single `.transform()` call is
+    now **both** enforced (as a Mongoose `validate` array) - this used to be
+    a known gap where only the pre-transform refinement survived.
 - ✅ Unique:
   - `String`,
   - `Number`,
@@ -50,21 +62,52 @@ These types and features are fully supported and tested:
   - `ObjectId`,
   - `UUID`
 
+## Design notes
+
+Some of the types above have no native Mongoose equivalent, so they're mapped
+onto the closest sane representation rather than forced into something
+Mongoose can't actually express:
+
+- **Tuples**: stored as a Mongoose array of `Mixed` (Mongoose arrays are
+  homogeneous and unbounded) with a `validate` enforcing the tuple's real
+  contract - exact arity (or a minimum arity plus a `.rest()` type), and the
+  correct type at each position. The per-position checks reuse the original
+  Zod item schemas' own `.safeParse()`.
+- **Literals**: all-string values map to `String` with Mongoose's native
+  `enum`; all-number / all-boolean values map to that primitive plus a
+  `validate` enforcing membership (Mongoose has no non-string `enum`);
+  anything else (mixed types, or types with no Mongoose primitive, e.g.
+  `bigint`) maps to `Mixed` plus the same membership `validate`.
+- **Discriminated unions**: Mongoose's own "discriminator" feature only
+  applies to top-level models / array subdocuments, not to an arbitrary
+  object-valued field, so there's no native fit. The field is mapped to
+  `Mixed` and validated by re-parsing with the original discriminated-union
+  schema's own `.safeParse()`, which already implements "dispatch on the
+  discriminant, validate against the matching variant" correctly.
+- **Recursive schemas (`z.lazy()`)**: Mongoose has no concept of an
+  infinitely recursive embedded subdocument, so a self-referencing schema is
+  unrolled by repeatedly calling its `z.lazy()` getter, capped at 5
+  recursions per distinct getter. Beyond that depth the field falls back to
+  `Mixed` rather than recursing forever - documents nested deeper than the
+  cap still round-trip through Mongo, they just lose structural validation
+  past that point.
+- **`z.catch()`**: Mongoose's `default` only applies when a path is
+  `undefined`, not when a *present* value fails validation - which is
+  exactly the `.catch()` contract. This is instead implemented via a
+  Mongoose `set` transform that re-parses the assigned value against the
+  inner Zod type and substitutes the resolved catch value on failure.
+
 ## Danger zone
 
 - ⚠️ Record (Being converted to `Map`)
-- ⚠️ Unions (Not supported by mongoose, **will pick first inner type**)
-- ⚠️ **Refine-before-and-after-transform**: if a field is refined both
-  *before and after* a single `.transform()` call (e.g.
-  `z.string().refine(a).transform(fn).refine(b)`), only the pre-transform
-  refinement (`a`) is currently kept - the post-transform refinement (`b`)
-  is silently dropped. This is a known, tested limitation (see
-  `src/index.spec.ts`, "KNOWN GAP" test) rather than a supported feature; do
-  not rely on the post-transform refinement running.
+- ⚠️ Plain unions (`z.union()`, as opposed to `z.discriminatedUnion()` above)
+  are not supported by Mongoose and **will pick the first inner type**.
 
 ## Not supported by Mongoose
 
-- ❌ ZodTuple
+Intersections where either side isn't a plain object schema (e.g.
+`z.string().and(z.number())`) have no sane flat-merge interpretation onto a
+Mongoose field and will throw a clear error rather than guess.
 
 ## Not supported by Zod
 
@@ -72,7 +115,5 @@ These types and features are fully supported and tested:
 
 ## Not supported yet
 
-- ❌ Discriminated unions (See
-  [#16](https://github.com/git-zodyac/mongoose/issues/16))
 - ⏳ Regex validation
 - ⏳ instanceOf
