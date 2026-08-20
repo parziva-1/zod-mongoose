@@ -1106,4 +1106,24 @@ describe("Regression: production default-value bugs", () => {
     const NestedModel = model("Bug1NestedOptionalNullableDefault", zodSchema(zNested));
     expect(new NestedModel({}).lastUpdated).toBeNull();
   });
+
+  test("bug #2 - zId().ref().nullable().default(null) applies the Mongoose default (production `consumptionId` shape)", () => {
+    const zObj = z.object({
+      consumptionId: zId().ref("Consumption").nullable().default(null),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("Bug2ZIdNullableDefault", schema);
+
+    const doc = new Model({});
+    expect(doc.consumptionId).toBeNull();
+    expect(doc.validateSync()).toBeUndefined();
+    expect((<any>schema.obj.consumptionId).ref).toBe("Consumption");
+
+    // zUUID() must behave the same way.
+    const zUuidObj = z.object({
+      deviceId: zUUID().ref("Device").nullable().default(null),
+    });
+    const UuidModel = model("Bug2ZUuidNullableDefault", zodSchema(zUuidObj));
+    expect(new UuidModel({}).deviceId).toBeNull();
+  });
 });

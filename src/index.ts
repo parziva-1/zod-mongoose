@@ -1,4 +1,4 @@
-import { Schema, type SchemaOptions, SchemaTypes } from "mongoose";
+import { Schema, type SchemaOptions, SchemaTypes, type Types } from "mongoose";
 import type { ZodNumber, ZodObject, ZodRawShape, ZodString, ZodType, z } from "zod";
 
 import zmAssert from "./assertions/assertions.js";
@@ -213,15 +213,15 @@ function parseField<T>(
     const refPath = (<any>field).__zm_refPath;
     const unique = (<any>field).__zm_unique;
     const sparse = (<any>field).__zm_sparse;
-    return parseObjectId(required, ref, unique, refPath, sparse);
+    return parseObjectId(required, ref, unique, refPath, sparse, def as zm.mDefault<any>);
   }
 
   if (zmAssert.uuid(field)) {
     const ref = (<any>field).__zm_ref;
     const refPath = (<any>field).__zm_refPath;
     const unique = (<any>field).__zm_unique;
-    const sparse = (<any>field).__zm_unique;
-    return parseUUID(required, ref, unique, refPath, sparse);
+    const sparse = (<any>field).__zm_sparse;
+    return parseUUID(required, ref, unique, refPath, sparse, def as zm.mDefault<any>);
   }
 
   if (zmAssert.object(field)) {
@@ -559,12 +559,14 @@ function parseObjectId(
   unique = false,
   refPath?: string,
   sparse = false,
+  def?: zm.mDefault<Types.ObjectId | null>,
 ): zm.mObjectId {
   const output: zm.mObjectId = {
     type: SchemaTypes.ObjectId,
     required,
     unique,
     sparse,
+    default: def as zm.mDefault<Types.ObjectId> | undefined,
   };
 
   if (ref) output.ref = ref;
@@ -608,12 +610,14 @@ function parseUUID(
   unique = false,
   refPath?: string,
   sparse = false,
+  def?: zm.mDefault<Types.UUID | null>,
 ): zm.mUUID {
   const output: zm.mUUID = {
     type: SchemaTypes.UUID,
     required,
     unique,
     sparse,
+    default: def as zm.mDefault<Types.UUID> | undefined,
   };
   if (ref) output.ref = ref;
   if (refPath) output.refPath = refPath;

@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   survived when `.default()` came after `.optional()` in the chain. It now
   forwards `def` through regardless of chain order (including deeper
   chains like `.optional().nullable().default(null)`).
+- **`zId()`/`zUUID()` fields now honor `.default()`, in any chain order.**
+  The ObjectId/UUID branches of `parseField` never accepted or forwarded a
+  `def` argument at all, so e.g. `zId().ref('X').nullable().default(null)`
+  always ended up `undefined` instead of `null`. `parseObjectId`/
+  `parseUUID` now accept and apply a `default`. (Also fixed an adjacent
+  copy-paste bug where the UUID branch read `__zm_unique` twice instead of
+  `__zm_sparse` for its `sparse` flag.)
 
 ## 5.0.0 - 2026-08-20
 ### Breaking
