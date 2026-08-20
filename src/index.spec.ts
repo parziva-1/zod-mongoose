@@ -1,4 +1,4 @@
-import { Schema, SchemaTypes, Types, model } from "mongoose";
+import { model, Schema, SchemaTypes, Types } from "mongoose";
 import { z } from "zod";
 import zodSchema, { extendZod, zId, zodSchemaRaw, zUUID } from "./index";
 
@@ -319,12 +319,15 @@ describe("Unsupported types", () => {
     expect((<any>obj.field).type).toBe(String);
   });
 
-  test("Unsupported type should throw an error", () => {
+  test("z.unknown() is supported and maps to Mixed", () => {
+    // Previously unsupported (threw); z.unknown() now maps to Mixed the
+    // same way z.any() does.
     const schema = z.object({
       field: z.unknown(),
     });
 
-    expect(() => zodSchema(schema)).toThrow();
+    const { obj } = zodSchema(schema);
+    expect((<any>obj.field).type).toBe(SchemaTypes.Mixed);
   });
 
   test("Unsupported Map key should not throw an error", () => {
@@ -815,5 +818,22 @@ describe("Preprocess and transform effects", () => {
     // Passes both checks.
     const ok = new Model({ value: "abc" });
     expect(ok.validateSync()).toBeUndefined();
+  });
+});
+
+describe("z.unknown() / z.any()", () => {
+  test("both map to Mixed and accept any value", () => {
+    const zObj = z.object({
+      a: z.any(),
+      u: z.unknown(),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("AnyUnknownMixed", schema);
+
+    expect((<any>schema.obj.a).type).toBe(SchemaTypes.Mixed);
+    expect((<any>schema.obj.u).type).toBe(SchemaTypes.Mixed);
+
+    const doc = new Model({ a: { nested: true }, u: [1, 2, 3] });
+    expect(doc.validateSync()).toBeUndefined();
   });
 });

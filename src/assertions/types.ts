@@ -15,6 +15,7 @@ import type {
   ZodString,
   ZodType,
   ZodUnion,
+  ZodUnknown,
 } from "zod";
 
 export interface IAsserts {
@@ -34,7 +35,8 @@ export interface IAsserts {
   optional(f: ZodType): f is ZodOptional;
   nullable(f: ZodType): f is ZodNullable;
   union(f: ZodType): f is ZodUnion;
-  any(f: ZodType): f is ZodAny;
+  /** Matches `z.any()` and `z.unknown()` - both map to `SchemaTypes.Mixed`. */
+  any(f: ZodType): f is ZodAny | ZodUnknown;
   mapOrRecord(f: ZodType): f is ZodMap | ZodRecord;
   /**
    * Matches `ZodPipe` schemas produced by `.transform()` / `z.preprocess()`.

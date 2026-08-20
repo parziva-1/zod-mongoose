@@ -57,7 +57,11 @@ export const zmAssert: IAsserts = {
   },
 
   any(f: ZodType): f is any {
-    return f._zod.def.type === "any";
+    // `z.any()` and `z.unknown()` carry no meaningful runtime constraints of
+    // their own and map to the exact same Mongoose representation
+    // (`SchemaTypes.Mixed`), so they're treated as one case here.
+    const type = f._zod.def.type;
+    return type === "any" || type === "unknown";
   },
 
   mapOrRecord(f: ZodType): f is any {
