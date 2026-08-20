@@ -402,6 +402,34 @@ function parseField<T>(
     }
   }
 
+  if (zmAssert.catch(field)) {
+    const catchField = field as any;
+    const innerType = catchField._zod.def.innerType as ZodType;
+    const catchValueFn = catchField._zod.def.catchValue as (ctx: {
+      value: unknown;
+      issues: unknown[];
+      error?: unknown;
+    }) => unknown;
+
+    const inner = parseField(innerType, required, def, refinement);
+    if (!inner) return inner;
+
+    // Emulate Zod's `.catch()` semantics (fall back to a computed/static
+    // value when parsing the input fails) via Mongoose's `set` transform.
+    // Mongoose's own `default` only applies when a path is `undefined`, not
+    // when a *present* value fails validation - which is the actual
+    // `.catch()` contract, so `default` alone can't represent it.
+    const previousSet = (inner as any).set as ((v: unknown) => unknown) | undefined;
+    (inner as any).set = (v: unknown) => {
+      const result = innerType.safeParse(v);
+      const resolved = result.success
+        ? result.data
+        : catchValueFn({ value: v, issues: result.error.issues, error: result.error });
+      return previousSet ? previousSet(resolved) : resolved;
+    };
+    return inner;
+  }
+
   if (zmAssert.mapOrRecord(field)) {
     const mapField = field as any;
     return parseMap(

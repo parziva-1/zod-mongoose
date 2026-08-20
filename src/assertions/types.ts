@@ -2,6 +2,7 @@ import type {
   ZodAny,
   ZodArray,
   ZodBoolean,
+  ZodCatch,
   ZodDate,
   ZodDefault,
   ZodDiscriminatedUnion,
@@ -57,4 +58,5 @@ export interface IAsserts {
   discriminatedUnion(f: ZodType): f is ZodDiscriminatedUnion;
   intersection(f: ZodType): f is ZodIntersection;
   lazy(f: ZodType): f is ZodLazy;
+  catch(f: ZodType): f is ZodCatch;
 }

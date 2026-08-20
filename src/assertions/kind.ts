@@ -100,4 +100,8 @@ export const zmAssert: IAsserts = {
   lazy(f: ZodType): f is any {
     return f._zod.def.type === "lazy";
   },
+
+  catch(f: ZodType): f is any {
+    return f._zod.def.type === "catch";
+  },
 };

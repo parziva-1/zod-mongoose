@@ -1044,3 +1044,30 @@ describe("z.lazy()", () => {
     expect(() => zodSchema(zObj)).not.toThrow();
   });
 });
+
+describe("z.catch()", () => {
+  test("falls back to the catch value when assigned input fails to parse", () => {
+    const zObj = z.object({
+      count: z.number().catch(0),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("CatchStaticFallback", schema);
+
+    const good = new Model({ count: 5 });
+    expect(good.count).toBe(5);
+
+    const bad = new Model({ count: "not-a-number" as unknown as number });
+    expect(bad.count).toBe(0);
+  });
+
+  test("supports a fallback function that sees the original failing value", () => {
+    const zObj = z.object({
+      count: z.number().catch((ctx) => (typeof ctx.value === "string" ? -1 : 0)),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("CatchFunctionFallback", schema);
+
+    const bad = new Model({ count: "oops" as unknown as number });
+    expect(bad.count).toBe(-1);
+  });
+});
