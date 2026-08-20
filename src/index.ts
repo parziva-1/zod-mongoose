@@ -284,7 +284,9 @@ function parseField<T>(
 
   if (zmAssert.union(field)) {
     const options = (field as any)._zod.def.options as ZodType[];
-    return parseField(options[0]);
+    const firstOption = options[0];
+    if (!firstOption) throw new Error("Union type must have at least one option");
+    return parseField(firstOption);
   }
 
   if (zmAssert.any(field)) {
