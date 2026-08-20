@@ -1,32 +1,51 @@
 {
-  "name": "@zodyac/zod-mongoose",
+  "name": "@spybee/zod-mongoose",
   "version": "5.0.0",
-  "description": "A library that allows you to generate mongoose schemas from zod objects.",
+  "description": "A library that allows you to generate mongoose schemas from zod objects. Fork of @zodyac/zod-mongoose with Zod v4 support.",
   "scripts": {
     "test": "jest",
     "test:run": "node test.js",
     "test:badges": "jest --coverage && make-coverage-badge --report-path ./artifacts/coverage/coverage-summary.json --output-path ./badges/coverage.svg",
-    "build": "tsup",
+    "build": "tsdown",
     "lint": "biome check",
     "lint:fix": "biome check --write .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:types": "attw --pack . --ignore-rules cjs-resolves-to-esm",
+    "check:pack": "publint",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build && npm run check:types && npm run check:pack",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "npm run build && changeset publish"
   },
   "type": "module",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
+  "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "typings": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "private": false,
   "sideEffects": true,
   "files": [
     "dist"
   ],
   "author": "bebrasmell",
+  "contributors": [
+    "Jaime Linares <jaime.linares@innovaitors.ai> (https://github.com/parziva-1)"
+  ],
   "license": "MIT",
-  "homepage": "https://zodyac.dev/toolbox/zod-mongoose",
+  "homepage": "https://github.com/parziva-1/zod-mongoose#readme",
+  "bugs": {
+    "url": "https://github.com/parziva-1/zod-mongoose/issues"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/git-zodyac/mongoose"
+    "url": "git+https://github.com/parziva-1/zod-mongoose.git"
   },
   "keywords": [
     "zod",
@@ -47,7 +66,10 @@
     "document"
   ],
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@biomejs/biome": "2.3.8",
+    "@changesets/changelog-github": "^1.0.0",
+    "@changesets/cli": "^3.0.1",
     "@swc/core": "1.15.3",
     "@swc/jest": "0.2.39",
     "@types/jest": "30.0.0",
@@ -55,7 +77,8 @@
     "jest": "30.2.0",
     "make-coverage-badge": "1.2.0",
     "mongoose": "8.20.2",
-    "tsup": "8.5.1",
+    "publint": "^0.3.24",
+    "tsdown": "^0.22.14",
     "typescript": "5.9.2",
     "zod": "^4.4.3"
   },
@@ -63,5 +86,8 @@
     "mongoose": "^8.20.2 || ^9.0.0",
     "zod": "^4.0.0"
   },
-  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+  "packageManager": "npm@12.0.2",
+  "engines": {
+    "node": ">=20"
+  }
 }
