@@ -22,15 +22,21 @@ These types and features are fully supported and tested:
 - ✅ UUID (custom, `zUUID()`)
 - ✅ Nested objects and schemas (ZodObject)
 - ✅ Arrays (ZodArray)
-- ✅ Enums (strings only)
-- ✅ Default values (ZodDefault)
-- ✅ Maps (ZodRecord)
+- ✅ Enums, including native (TypeScript) enums (ZodEnum)
+- ✅ Default values (ZodDefault), both a static value and a factory function
+  (`() => value`), re-evaluated on every access
+- ✅ Maps (ZodMap) and Records (ZodRecord, converted to `Map`)
 - ✅ ObjectId references (custom, `zId(ref)`)
 - ✅ Optional fields (ZodOptional)
+- ✅ Nullable fields (ZodNullable), including combined with `.optional()`
+- ✅ `.transform()` and `z.preprocess()` (ZodPipe)
 - ✅ Validation using refinement (`z.refine()`):
   - `String`,
   - `Number`,
   - `Date`
+  - A refinement applied before OR after a single `.transform()` is
+    preserved. See the "Danger zone" note below for the one combined case
+    that is not.
 - ✅ Unique:
   - `String`,
   - `Number`,
@@ -48,6 +54,13 @@ These types and features are fully supported and tested:
 
 - ⚠️ Record (Being converted to `Map`)
 - ⚠️ Unions (Not supported by mongoose, **will pick first inner type**)
+- ⚠️ **Refine-before-and-after-transform**: if a field is refined both
+  *before and after* a single `.transform()` call (e.g.
+  `z.string().refine(a).transform(fn).refine(b)`), only the pre-transform
+  refinement (`a`) is currently kept - the post-transform refinement (`b`)
+  is silently dropped. This is a known, tested limitation (see
+  `src/index.spec.ts`, "KNOWN GAP" test) rather than a supported feature; do
+  not rely on the post-transform refinement running.
 
 ## Not supported by Mongoose
 

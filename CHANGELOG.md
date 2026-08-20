@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## 5.0.0 - 2026-08-20
 ### Breaking
+- **BREAKING: package renamed to `@spybee/zod-mongoose`.** This fork is now
+  published independently of the upstream `@zodyac/zod-mongoose` scope.
+  Update your imports from `@zodyac/zod-mongoose` to `@spybee/zod-mongoose`.
+- **BREAKING: package is now ESM-only.** The CJS build has been dropped;
+  `require()` is no longer supported. CommonJS consumers should use a
+  dynamic `await import("@spybee/zod-mongoose")`. The `exports` field now
+  lists the `types` condition first in every conditional block and exposes
+  `./package.json` explicitly, per current Node.js/bundler best practice.
+  Package correctness is verified in CI via `@arethetypeswrong/cli` and
+  `publint`.
 - **BREAKING: now requires `zod ^4.0.0`, drops Zod v3 support.** Zod v3 is no
   longer supported at all - this is an intentional major-version rewrite of
   the internal schema introspection to match Zod v4's runtime shape
@@ -26,6 +36,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `z.enum()` and `z.nativeEnum()` are now handled identically: Zod v4
   represents both as `ZodEnum` and there is no longer a runtime-observable
   difference between them.
+
+### Tooling
+- Build tool migrated from `tsup` to `tsdown` (Rolldown-based).
+- `tsconfig.json` tightened: `moduleResolution: "bundler"`,
+  `verbatimModuleSyntax`, `noUncheckedIndexedAccess`, `isolatedModules`,
+  `skipLibCheck`.
+- Added `@arethetypeswrong/cli` and `publint` as package-correctness gates
+  (`npm run check:types`, `npm run check:pack`).
+- Added GitHub Actions CI (lint, typecheck, test, build, attw, publint) and
+  a release workflow that publishes to npm with provenance via OIDC trusted
+  publishing (no `NPM_TOKEN` secret).
+- Added [Changesets](https://github.com/changesets/changesets) for release
+  automation.
+- Added a proper `LICENSE` file (MIT), test coverage for previously
+  under-tested behavior (factory-function defaults, nullable/optional
+  combinations, and the refine-before-and-after-transform limitation).
 
 ## 4.2.2 - 2025-12-28
 
