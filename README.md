@@ -1,8 +1,8 @@
-# @spybee/zod-mongoose
+# @parziva-1/zod-mongoose
 
 ![CI](https://github.com/parziva-1/zod-mongoose/actions/workflows/ci.yml/badge.svg)
-![NPM Version](https://img.shields.io/npm/v/%40spybee%2Fzod-mongoose)
-![License](https://img.shields.io/npm/l/%40spybee%2Fzod-mongoose)
+![NPM Version](https://img.shields.io/npm/v/%40parziva-1%2Fzod-mongoose)
+![License](https://img.shields.io/npm/l/%40parziva-1%2Fzod-mongoose)
 ![Test coverage](./badges/coverage.svg)
 
 Convert [Zod](https://www.npmjs.com/package/zod) object schemas into
@@ -26,24 +26,24 @@ All credit for the original design and implementation goes to the upstream
 ## Installation
 
 ```bash
-npm install @spybee/zod-mongoose
-pnpm add @spybee/zod-mongoose
-yarn add @spybee/zod-mongoose
-bun add @spybee/zod-mongoose
+npm install @parziva-1/zod-mongoose
+pnpm add @parziva-1/zod-mongoose
+yarn add @parziva-1/zod-mongoose
+bun add @parziva-1/zod-mongoose
 ```
 
 Peer dependencies: `zod@^4.0.0` and `mongoose@^8.20.2 || ^9.0.0`.
 
 ## Migrating from `@zodyac/zod-mongoose`
 
-- **Package name**: import from `@spybee/zod-mongoose` instead of
+- **Package name**: import from `@parziva-1/zod-mongoose` instead of
   `@zodyac/zod-mongoose`.
 - **Zod version**: you must be on `zod@^4.0.0`. Zod v3 is not supported at
   all - stay on the upstream package (or this fork's `4.x` line, if you need
   an intermediate step) until your schemas are migrated.
 - **Module format**: this package is **ESM-only** starting with v5 (no CJS
   build). If you `require()` it from CommonJS, use a dynamic
-  `await import("@spybee/zod-mongoose")` instead.
+  `await import("@parziva-1/zod-mongoose")` instead.
 - **Public API is unchanged**: `zodSchema`, `zodSchemaRaw`, `extendZod`,
   `zId`, `zUUID`, `.unique()`, `.sparse()`, `.ref()`, `.refPath()` all keep
   their existing signatures.
@@ -56,7 +56,7 @@ First, extend Zod with `extendZod`, then create your Zod schema:
 
 ```typescript
 import { z } from "zod";
-import { extendZod, zId, zUUID } from "@spybee/zod-mongoose";
+import { extendZod, zId, zUUID } from "@parziva-1/zod-mongoose";
 
 extendZod(z);
 
@@ -81,7 +81,7 @@ const zUser = z.object({
 Then convert it to a Mongoose schema and connect a model:
 
 ```typescript
-import { zodSchema } from "@spybee/zod-mongoose";
+import { zodSchema } from "@parziva-1/zod-mongoose";
 import { model } from "mongoose";
 
 const schema = zodSchema(zUser);
@@ -143,7 +143,7 @@ If you want the raw object produced from a Zod schema so you can modify it
 before constructing the `Schema`, use `zodSchemaRaw`:
 
 ```typescript
-import { extendZod, zodSchemaRaw } from "@spybee/zod-mongoose";
+import { extendZod, zodSchemaRaw } from "@parziva-1/zod-mongoose";
 import { model, Schema } from "mongoose";
 import { z } from "zod";
 
@@ -166,7 +166,7 @@ Use `zId(ref?: string)` and `zUUID(ref?: string)` to describe ObjectID and
 UUID fields, and to reference another collection:
 
 ```typescript
-import { extendZod, zId, zUUID } from "@spybee/zod-mongoose";
+import { extendZod, zId, zUUID } from "@parziva-1/zod-mongoose";
 import { z } from "zod";
 
 extendZod(z);
@@ -196,7 +196,7 @@ Use Zod refinement to validate your Mongoose models:
 
 ```typescript
 import { z } from "zod";
-import { extendZod, zodSchema } from "@spybee/zod-mongoose";
+import { extendZod, zodSchema } from "@parziva-1/zod-mongoose";
 
 extendZod(z);
 

@@ -1,5 +1,5 @@
 {
-  "name": "@spybee/zod-mongoose",
+  "name": "@parziva-1/zod-mongoose",
   "version": "5.0.0",
   "description": "A library that allows you to generate mongoose schemas from zod objects. Fork of @zodyac/zod-mongoose with Zod v4 support.",
   "scripts": {
@@ -76,7 +76,7 @@
     "@types/node": "24.10.1",
     "jest": "30.2.0",
     "make-coverage-badge": "1.2.0",
-    "mongoose": "8.20.2",
+    "mongoose": "8.24.3",
     "publint": "^0.3.24",
     "tsdown": "^0.22.14",
     "typescript": "5.9.2",

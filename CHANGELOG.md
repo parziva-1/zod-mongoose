@@ -9,12 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## 5.0.0 - 2026-08-20
 ### Breaking
-- **BREAKING: package renamed to `@spybee/zod-mongoose`.** This fork is now
+- **BREAKING: package renamed to `@parziva-1/zod-mongoose`.** This fork is now
   published independently of the upstream `@zodyac/zod-mongoose` scope.
-  Update your imports from `@zodyac/zod-mongoose` to `@spybee/zod-mongoose`.
+  Update your imports from `@zodyac/zod-mongoose` to `@parziva-1/zod-mongoose`.
 - **BREAKING: package is now ESM-only.** The CJS build has been dropped;
   `require()` is no longer supported. CommonJS consumers should use a
-  dynamic `await import("@spybee/zod-mongoose")`. The `exports` field now
+  dynamic `await import("@parziva-1/zod-mongoose")`. The `exports` field now
   lists the `types` condition first in every conditional block and exposes
   `./package.json` explicitly, per current Node.js/bundler best practice.
   Package correctness is verified in CI via `@arethetypeswrong/cli` and
