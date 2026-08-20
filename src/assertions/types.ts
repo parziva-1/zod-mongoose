@@ -7,6 +7,7 @@ import type {
   ZodDiscriminatedUnion,
   ZodEnum,
   ZodIntersection,
+  ZodLazy,
   ZodLiteral,
   ZodMap,
   ZodNullable,
@@ -55,4 +56,5 @@ export interface IAsserts {
    */
   discriminatedUnion(f: ZodType): f is ZodDiscriminatedUnion;
   intersection(f: ZodType): f is ZodIntersection;
+  lazy(f: ZodType): f is ZodLazy;
 }

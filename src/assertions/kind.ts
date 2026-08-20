@@ -96,4 +96,8 @@ export const zmAssert: IAsserts = {
   intersection(f: ZodType): f is any {
     return f._zod.def.type === "intersection";
   },
+
+  lazy(f: ZodType): f is any {
+    return f._zod.def.type === "lazy";
+  },
 };

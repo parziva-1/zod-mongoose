@@ -993,3 +993,54 @@ describe("z.intersection()", () => {
     expect(() => zodSchema(zObj)).toThrow(/Unsupported intersection/);
   });
 });
+
+describe("z.lazy()", () => {
+  test("supports a recursive comment-with-replies document shape", () => {
+    interface Comment {
+      text: string;
+      replies?: Comment[];
+    }
+
+    const CommentSchema: z.ZodType<Comment> = z.lazy(() =>
+      z.object({
+        text: z.string(),
+        replies: z.array(CommentSchema).optional(),
+      }),
+    );
+
+    const zObj = z.object({ root: CommentSchema });
+    const schema = zodSchema(zObj);
+    const Model = model("LazyRecursiveComment", schema);
+
+    const doc = new Model({
+      root: {
+        text: "top level",
+        replies: [
+          { text: "reply 1", replies: [{ text: "nested reply" }] },
+          { text: "reply 2" },
+        ],
+      },
+    });
+
+    expect(doc.validateSync()).toBeUndefined();
+    expect(doc.toObject().root.replies[0].replies[0].text).toBe("nested reply");
+  });
+
+  test("does not recurse infinitely and bottoms out past the depth limit", () => {
+    interface Node {
+      value: number;
+      child?: Node;
+    }
+    const NodeSchema: z.ZodType<Node> = z.lazy(() =>
+      z.object({
+        value: z.number(),
+        child: NodeSchema.optional(),
+      }),
+    );
+
+    const zObj = z.object({ root: NodeSchema });
+    // Should terminate (not stack overflow) even though the schema is
+    // infinitely self-referencing.
+    expect(() => zodSchema(zObj)).not.toThrow();
+  });
+});

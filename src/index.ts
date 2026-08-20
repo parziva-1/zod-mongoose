@@ -7,6 +7,19 @@ import type { zm } from "./mongoose.types.js";
 export * from "./extension.js";
 
 /**
+ * Maximum number of times `parseField` will follow a given `z.lazy()`
+ * getter into itself before bottoming out at `SchemaTypes.Mixed`. Guards
+ * against unbounded recursion when parsing a genuinely self-referencing
+ * schema (e.g. a comment type whose `replies` field is `z.array(z.lazy(() =>
+ * CommentSchema))`) - Mongoose has no native equivalent of an infinitely
+ * recursive embedded subdocument, so the structure has to be unrolled to a
+ * finite depth. Keyed per-getter (not globally) via `lazyDepth` below, so
+ * unrelated lazy schemas in the same document don't share a budget.
+ */
+const LAZY_DEPTH_LIMIT = 5;
+const lazyDepth = new WeakMap<() => ZodType, number>();
+
+/**
  * Converts a Zod schema to a Mongoose schema
  * @param schema zod schema to parse
  * @returns mongoose schema
@@ -365,6 +378,28 @@ function parseField<T>(
       return { type: merged, required: false } as unknown as zm.mField;
     }
     return merged as unknown as zm.mField;
+  }
+
+  if (zmAssert.lazy(field)) {
+    const getter = (field as any)._zod.def.getter as () => ZodType;
+    const depth = lazyDepth.get(getter) ?? 0;
+    if (depth >= LAZY_DEPTH_LIMIT) {
+      // Bottom out recursive/self-referencing schemas at a fixed depth.
+      // Mongoose has no native concept of an infinitely recursive embedded
+      // subdocument (unlike Zod, which can describe one lazily); beyond this
+      // depth we fall back to Mixed rather than recursing forever. This is a
+      // pragmatic compromise, not a full solution - documents nested deeper
+      // than the limit still round-trip through Mongo, they just lose
+      // structural validation past that point.
+      return parseMixed(required, def);
+    }
+    lazyDepth.set(getter, depth + 1);
+    try {
+      const inner = getter();
+      return parseField(inner, required, def, refinement);
+    } finally {
+      lazyDepth.set(getter, depth);
+    }
   }
 
   if (zmAssert.mapOrRecord(field)) {
