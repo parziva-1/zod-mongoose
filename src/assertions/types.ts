@@ -13,6 +13,7 @@ import type {
   ZodPipe,
   ZodRecord,
   ZodString,
+  ZodTuple,
   ZodType,
   ZodUnion,
   ZodUnknown,
@@ -43,4 +44,5 @@ export interface IAsserts {
    * Zod v4 no longer has a `ZodEffects` wrapper type.
    */
   pipe(f: ZodType): f is ZodPipe;
+  tuple(f: ZodType): f is ZodTuple;
 }

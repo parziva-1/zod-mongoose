@@ -332,6 +332,10 @@ function parseField<T>(
     return parseMixed(required, def);
   }
 
+  if (zmAssert.tuple(field)) {
+    return parseTuple(field, required, def);
+  }
+
   if (zmAssert.mapOrRecord(field)) {
     const mapField = field as any;
     return parseMap(
@@ -523,6 +527,55 @@ function parseMixed(required = true, def?: unknown): zm.mMixed<unknown> {
     type: SchemaTypes.Mixed,
     default: def as unknown as any,
     required,
+  };
+}
+
+/**
+ * `z.tuple()` has no native Mongoose equivalent (Mongoose arrays are
+ * homogeneous and unbounded). It's represented as a Mongoose array of
+ * `Mixed` - so it still round-trips through Mongo as a JSON array - with a
+ * `validate` that enforces the tuple's actual contract (exact arity, or a
+ * minimum arity plus a rest type, and the correct type at each position).
+ * Rather than re-deriving per-position type checks by hand, the validator
+ * reuses the original Zod item schemas' own `.safeParse()`, which is both
+ * simpler and guaranteed to match Zod's own validation semantics exactly.
+ */
+function parseTuple(field: ZodType, required = true, def?: unknown): zm.mArray<unknown> {
+  const tupleDef = (field as any)._zod.def as { items: ZodType[]; rest: ZodType | null };
+  const items = tupleDef.items;
+  const rest = tupleDef.rest;
+
+  const validator = (value: unknown): boolean => {
+    if (!Array.isArray(value)) return false;
+    if (rest) {
+      if (value.length < items.length) return false;
+    } else if (value.length !== items.length) {
+      return false;
+    }
+
+    for (let i = 0; i < items.length; i++) {
+      const itemSchema = items[i];
+      if (!itemSchema || !itemSchema.safeParse(value[i]).success) return false;
+    }
+    if (rest) {
+      for (let i = items.length; i < value.length; i++) {
+        if (!rest.safeParse(value[i]).success) return false;
+      }
+    }
+    return true;
+  };
+
+  const message = rest
+    ? `Expected a tuple of at least ${items.length} element(s) matching the declared types`
+    : `Expected a tuple of exactly ${items.length} element(s) matching the declared types`;
+
+  return {
+    type: [{ type: SchemaTypes.Mixed, required: false }] as unknown as [
+      zm._Field<unknown>,
+    ],
+    default: def as zm.mDefault<unknown[]>,
+    required,
+    validate: { validator, message },
   };
 }
 

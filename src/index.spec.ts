@@ -837,3 +837,47 @@ describe("z.unknown() / z.any()", () => {
     expect(doc.validateSync()).toBeUndefined();
   });
 });
+
+describe("z.tuple()", () => {
+  test("enforces per-position types and exact arity", () => {
+    const zObj = z.object({
+      point: z.tuple([z.number(), z.number(), z.string()]),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("TupleFixedArity", schema);
+
+    expect(Array.isArray((<any>schema.obj.point).type)).toBe(true);
+
+    const valid = new Model({ point: [1, 2, "label"] });
+    expect(valid.validateSync()).toBeUndefined();
+
+    const wrongType = new Model({ point: [1, "two", "label"] });
+    expect(wrongType.validateSync()?.errors.point).toBeDefined();
+
+    const wrongLength = new Model({ point: [1, 2] });
+    expect(wrongLength.validateSync()?.errors.point).toBeDefined();
+
+    const tooLong = new Model({ point: [1, 2, "label", "extra"] });
+    expect(tooLong.validateSync()?.errors.point).toBeDefined();
+  });
+
+  test("supports a rest element for variable-length tuples", () => {
+    const zObj = z.object({
+      row: z.tuple([z.string()]).rest(z.number()),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("TupleWithRest", schema);
+
+    const valid = new Model({ row: ["label", 1, 2, 3] });
+    expect(valid.validateSync()).toBeUndefined();
+
+    const minimal = new Model({ row: ["label"] });
+    expect(minimal.validateSync()).toBeUndefined();
+
+    const badRest = new Model({ row: ["label", 1, "not-a-number"] });
+    expect(badRest.validateSync()?.errors.row).toBeDefined();
+
+    const missingRequired = new Model({ row: [] });
+    expect(missingRequired.validateSync()?.errors.row).toBeDefined();
+  });
+});

@@ -71,4 +71,8 @@ export const zmAssert: IAsserts = {
   pipe(f: ZodType): f is any {
     return f._zod.def.type === "pipe";
   },
+
+  tuple(f: ZodType): f is any {
+    return f._zod.def.type === "tuple";
+  },
 };
