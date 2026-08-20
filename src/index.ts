@@ -99,18 +99,7 @@ function parseObject<T extends ZodRawShape>(
   obj: ZodObject<T>,
   required = true,
 ): zm._Schema<T> | zm.mSubdocument<T> {
-  const object: any = {};
-  for (const [key, field] of Object.entries(obj.shape)) {
-    if (zmAssert.object(field as ZodType)) {
-      object[key] = parseObject(field as ZodObject<any>, true);
-    } else {
-      const f = parseField(field as ZodType);
-      if (!f)
-        throw new Error(`Unsupported field type: ${(field as ZodType).constructor}`);
-
-      object[key] = f;
-    }
-  }
+  const object: any = parseShape(obj.shape as ZodRawShape);
 
   if (!required) {
     return {
@@ -123,8 +112,31 @@ function parseObject<T extends ZodRawShape>(
 }
 
 /**
+ * Parses a raw Zod shape (a plain `{ key: ZodType }` map, as found on
+ * `ZodObject.shape`) into a Mongoose field-definition object. Shared between
+ * `parseObject` (which operates on an actual `ZodObject`) and the
+ * `z.intersection()` handler, which needs to merge two shapes into one flat
+ * object without constructing a synthetic `ZodObject` instance.
+ */
+function parseShape(shape: ZodRawShape): Record<string, unknown> {
+  const object: any = {};
+  for (const [key, field] of Object.entries(shape)) {
+    if (zmAssert.object(field as ZodType)) {
+      object[key] = parseObject(field as ZodObject<any>, true);
+    } else {
+      const f = parseField(field as ZodType);
+      if (!f)
+        throw new Error(`Unsupported field type: ${(field as ZodType).constructor}`);
+
+      object[key] = f;
+    }
+  }
+  return object;
+}
+
+/**
  * Walks a schema's own `checks` array (Zod v4) and returns the metadata for
- * the last `.refine()` custom check found, if any.
+ * *every* `.refine()` custom check found on it, in declaration order.
  *
  * Zod v4 no longer wraps refined schemas in a `ZodEffects`-like type: calling
  * `.refine()` simply appends a `"custom"` check to the schema's own
@@ -133,13 +145,20 @@ function parseObject<T extends ZodRawShape>(
  * carries the validator function (`fn`) and a normalized error accessor
  * (`error`), so there is no need to monkey-patch `refine()` to capture this
  * metadata as was necessary under Zod v3.
+ *
+ * A single Zod type can carry multiple `.refine()` checks (e.g.
+ * `z.string().refine(a).refine(b)`), and `parseField` also needs to combine
+ * checks found on *different* nodes of a `ZodPipe` (a pre-transform refine on
+ * the pipe's `in` side plus a post-transform refine on the pipe itself) - so
+ * this returns all matches rather than just the last one, leaving the
+ * caller free to merge them with refinements collected elsewhere.
  */
-function extractRefinement<T>(field: ZodType): zm.EffectValidator<T> | undefined {
+function extractRefinements<T>(field: ZodType): zm.EffectValidator<T>[] {
   const checks = (field as any)._zod?.def?.checks as any[] | undefined;
-  if (!checks || checks.length === 0) return undefined;
+  if (!checks || checks.length === 0) return [];
 
-  for (let i = checks.length - 1; i >= 0; i--) {
-    const check = checks[i];
+  const refinements: zm.EffectValidator<T>[] = [];
+  for (const check of checks) {
     const checkDef = check?._zod?.def;
     if (!checkDef || checkDef.check !== "custom") continue;
 
@@ -154,20 +173,27 @@ function extractRefinement<T>(field: ZodType): zm.EffectValidator<T> | undefined
       message = checkDef.error;
     }
 
-    return {
+    refinements.push({
       validator: checkDef.fn,
       message,
-    };
+    });
   }
 
-  return undefined;
+  return refinements;
+}
+
+function toRefinementArray<T>(
+  refinement: zm.EffectValidator<T> | zm.EffectValidator<T>[] | undefined,
+): zm.EffectValidator<T>[] {
+  if (!refinement) return [];
+  return Array.isArray(refinement) ? refinement : [refinement];
 }
 
 function parseField<T>(
   field: ZodType,
   required = true,
   def?: zm.mDefault<T>,
-  refinement?: zm.EffectValidator<T>,
+  refinement?: zm.EffectValidator<T> | zm.EffectValidator<T>[],
 ): zm.mField | null {
   if (zmAssert.objectId(field)) {
     const ref = (<any>field).__zm_ref;
@@ -189,7 +215,20 @@ function parseField<T>(
     return parseObject(field as ZodObject<any>, required);
   }
 
-  const ownRefinement = extractRefinement<T>(field) ?? refinement;
+  // Combine any `.refine()` checks found directly on this node with any
+  // passed down from an outer node (e.g. a post-transform refine on the
+  // enclosing `ZodPipe`), so refinements on *both* sides of a `.transform()`
+  // survive instead of the outer one silently overwriting the inner one.
+  const combinedRefinements = [
+    ...extractRefinements<T>(field),
+    ...toRefinementArray(refinement),
+  ];
+  const ownRefinement: zm.EffectValidator<T> | zm.EffectValidator<T>[] | undefined =
+    combinedRefinements.length === 0
+      ? undefined
+      : combinedRefinements.length === 1
+        ? combinedRefinements[0]
+        : combinedRefinements;
 
   if (zmAssert.number(field)) {
     const numberField = field as ZodNumber;
@@ -201,7 +240,7 @@ function parseField<T>(
       required,
       def as zm.mDefault<number>,
       isUnique,
-      ownRefinement as zm.EffectValidator<number>,
+      ownRefinement as zm.mValidate<number> | undefined,
       isSparse,
     );
   }
@@ -216,7 +255,7 @@ function parseField<T>(
       required,
       def as zm.mDefault<string>,
       isUnique,
-      ownRefinement as zm.EffectValidator<string>,
+      ownRefinement as zm.mValidate<string> | undefined,
       isSparse,
     );
   }
@@ -243,7 +282,7 @@ function parseField<T>(
     return parseDate(
       required,
       def as zm.mDefault<Date>,
-      ownRefinement as zm.EffectValidator<Date>,
+      ownRefinement as zm.mValidate<Date> | undefined,
       isUnique,
       isSparse,
     );
@@ -318,7 +357,7 @@ function parseField<T>(
     const inIsTransform = (pipeDef.in as any)._zod.def.type === "transform";
     const target = inIsTransform ? pipeDef.out : pipeDef.in;
 
-    return parseField(target, required, def, ownRefinement as zm.EffectValidator<T>);
+    return parseField(target, required, def, ownRefinement);
   }
 
   return null;
@@ -329,7 +368,7 @@ function parseNumber(
   required = true,
   def?: zm.mDefault<number>,
   unique = false,
-  validate?: zm.EffectValidator<number>,
+  validate?: zm.mValidate<number>,
   sparse = false,
 ): zm.mNumber {
   const output: zm.mNumber = {
@@ -353,7 +392,7 @@ function parseString(
   required = true,
   def?: zm.mDefault<string>,
   unique = false,
-  validate?: zm.EffectValidator<string>,
+  validate?: zm.mValidate<string>,
   sparse = false,
 ): zm.mString {
   const output: zm.mString = {
@@ -396,7 +435,7 @@ function parseBoolean(required = true, def?: zm.mDefault<boolean>): zm.mBoolean 
 function parseDate(
   required = true,
   def?: zm.mDefault<Date>,
-  validate?: zm.EffectValidator<Date>,
+  validate?: zm.mValidate<Date>,
   unique = false,
   sparse = false,
 ): zm.mDate {

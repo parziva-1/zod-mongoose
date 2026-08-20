@@ -1,4 +1,4 @@
-import { Schema, SchemaTypes, Types } from "mongoose";
+import { Schema, SchemaTypes, Types, model } from "mongoose";
 import { z } from "zod";
 import zodSchema, { extendZod, zId, zodSchemaRaw, zUUID } from "./index";
 
@@ -780,13 +780,13 @@ describe("Preprocess and transform effects", () => {
     expect((<any>schema.obj.value).validate.message).toBe("too long after");
   });
 
-  test("KNOWN GAP: refine-before-and-after-transform only keeps the first (pre-transform) refinement", () => {
-    // When a schema is refined both before AND after a `.transform()`, only
-    // the refinement closest to the original (pre-transform) type currently
-    // survives parsing - the post-transform refinement is silently dropped.
-    // This is a documented limitation of the current introspection strategy,
-    // not (yet) a supported feature; this test pins the current behavior so
-    // any change to it is caught intentionally rather than by accident.
+  test("refine-before-and-after-transform: both refinements are enforced", () => {
+    // A schema refined both before AND after a single `.transform()` used to
+    // silently drop the post-transform refinement (see CHANGELOG / git
+    // history for the "KNOWN GAP" this test used to pin). `parseField` now
+    // collects `.refine()` checks from every node it walks across a
+    // `ZodPipe` and merges them into a `validate` array, so Mongoose runs
+    // both. Prove it at the Mongoose validation level, not just structurally.
     const zObj = z.object({
       value: z
         .string()
@@ -796,10 +796,24 @@ describe("Preprocess and transform effects", () => {
     });
 
     const schema = zodSchema(zObj);
+    const Model = model("RefineBeforeAndAfterTransform", schema);
 
-    expect((<any>schema.obj.value).validate).toBeDefined();
-    // Only the pre-transform refinement message survives.
-    expect((<any>schema.obj.value).validate.message).toBe("too short before");
-    expect((<any>schema.obj.value).validate.message).not.toBe("too long after");
+    expect(Array.isArray((<any>schema.obj.value).validate)).toBe(true);
+    expect((<any>schema.obj.value).validate).toHaveLength(2);
+
+    // Fails the pre-transform check ("ab" has length 2, not > 2).
+    const tooShort = new Model({ value: "ab" });
+    const shortErr = tooShort.validateSync();
+    expect(shortErr?.errors.value?.message).toContain("too short before");
+
+    // Passes the pre-transform check, but the transformed (upper-cased)
+    // value is too long for the post-transform check to accept.
+    const tooLong = new Model({ value: "abcdefghij" });
+    const longErr = tooLong.validateSync();
+    expect(longErr?.errors.value?.message).toContain("too long after");
+
+    // Passes both checks.
+    const ok = new Model({ value: "abc" });
+    expect(ok.validateSync()).toBeUndefined();
   });
 });
