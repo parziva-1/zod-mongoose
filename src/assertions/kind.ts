@@ -92,4 +92,8 @@ export const zmAssert: IAsserts = {
       f._zod.def.type === "union" && typeof (f._zod.def as any).discriminator === "string"
     );
   },
+
+  intersection(f: ZodType): f is any {
+    return f._zod.def.type === "intersection";
+  },
 };

@@ -960,3 +960,36 @@ describe("z.discriminatedUnion()", () => {
     expect(unknownVariant.validateSync()?.errors.payload).toBeDefined();
   });
 });
+
+describe("z.intersection()", () => {
+  test("merges two object shapes into one flat sub-schema", () => {
+    const zObj = z.object({
+      profile: z.intersection(
+        z.object({ name: z.string() }),
+        z.object({ age: z.number() }),
+      ),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("IntersectionMerge", schema);
+
+    expect(Object.keys(<any>schema.obj.profile)).toEqual(
+      expect.arrayContaining(["name", "age"]),
+    );
+    expect((<any>schema.obj.profile).name.type).toBe(String);
+    expect((<any>schema.obj.profile).age.type).toBe(Number);
+
+    const valid = new Model({ profile: { name: "Ada", age: 30 } });
+    expect(valid.validateSync()).toBeUndefined();
+
+    const missingField = new Model({ profile: { name: "Ada" } });
+    expect(missingField.validateSync()?.errors["profile.age"]).toBeDefined();
+  });
+
+  test("non-object intersections throw a clear, documented error", () => {
+    const zObj = z.object({
+      value: z.intersection(z.string(), z.number()),
+    });
+
+    expect(() => zodSchema(zObj)).toThrow(/Unsupported intersection/);
+  });
+});

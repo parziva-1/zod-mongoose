@@ -349,6 +349,24 @@ function parseField<T>(
     return parseLiteral(values, required, def);
   }
 
+  if (zmAssert.intersection(field)) {
+    const { left, right } = (field as any)._zod.def as { left: ZodType; right: ZodType };
+    if (!zmAssert.object(left) || !zmAssert.object(right)) {
+      throw new Error(
+        "Unsupported intersection: zod-mongoose can only merge two object-shape schemas (z.object(...).and(z.object(...))) into a flat Mongoose sub-schema",
+      );
+    }
+    const mergedShape = {
+      ...(left as ZodObject<any>).shape,
+      ...(right as ZodObject<any>).shape,
+    };
+    const merged = parseShape(mergedShape as ZodRawShape);
+    if (!required) {
+      return { type: merged, required: false } as unknown as zm.mField;
+    }
+    return merged as unknown as zm.mField;
+  }
+
   if (zmAssert.mapOrRecord(field)) {
     const mapField = field as any;
     return parseMap(

@@ -6,6 +6,7 @@ import type {
   ZodDefault,
   ZodDiscriminatedUnion,
   ZodEnum,
+  ZodIntersection,
   ZodLiteral,
   ZodMap,
   ZodNullable,
@@ -53,4 +54,5 @@ export interface IAsserts {
    * `union` assertion - Zod v4 represents both as `ZodUnion` under the hood.
    */
   discriminatedUnion(f: ZodType): f is ZodDiscriminatedUnion;
+  intersection(f: ZodType): f is ZodIntersection;
 }
