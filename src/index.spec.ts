@@ -1152,4 +1152,27 @@ describe("Regression: production default-value bugs", () => {
     });
     expect(withValue.metadata.projectId).toBe("p1");
   });
+
+  test("bug #4 - z.record() with a union value type does not silently corrupt data (production `params` shape)", () => {
+    const zObj = z.object({
+      params: z.record(z.string(), z.union([z.string(), z.number()])),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("Bug4RecordUnionValueType", schema);
+
+    const doc = new Model({ params: { count: 3, label: "widgets" } });
+    expect(doc.validateSync()).toBeUndefined();
+
+    // The numeric value must round-trip as an actual number, not be
+    // silently coerced to a string by Mongoose's Map/String casting.
+    expect(doc.params.get("count")).toBe(3);
+    expect(typeof doc.params.get("count")).toBe("number");
+    expect(doc.params.get("label")).toBe("widgets");
+
+    // A value outside the declared union (neither string nor number) must
+    // be rejected rather than silently coerced/accepted.
+    const invalid = new Model({ params: { flag: true as unknown as string } });
+    const err = invalid.validateSync();
+    expect(err?.errors["params.flag"]).toBeDefined();
+  });
 });

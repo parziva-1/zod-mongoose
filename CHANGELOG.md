@@ -25,6 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   either, so e.g. `metadata: SomeSchema.default({})` always ended up
   `undefined`. `parseObject` now accepts a `def` and wraps the subdocument
   in the `{ type, default, required }` form whenever one is present.
+- **`z.record()`/`z.map()` with a union value type no longer silently
+  corrupts data.** The value type was routed through the generic union
+  handling, which picks the first union member's type - for
+  `z.record(z.string(), z.union([z.string(), z.number()]))` that silently
+  coerced numeric values to strings via Mongoose's `Map`/`String` casting
+  on save. The value type is now stored as `Schema.Types.Mixed` with a
+  `validate` re-checking each value against the original union schema, so
+  every member's actual type round-trips untouched and out-of-union values
+  are rejected instead of silently coerced. (The Zod v3→v4 `z.record()`
+  single-vs-two-argument signature change is a consumer-facing API note,
+  not an internal bug here - Zod v4's `z.record()` already accepts both the
+  single-argument form, defaulting `keyType` to `z.string()`, and the
+  two-argument form; this library reads `_zod.def.valueType`/`.valueType`
+  correctly either way.)
 
 ## 5.0.0 - 2026-08-20
 ### Breaking

@@ -609,8 +609,7 @@ function parseMap<T, K>(
   required = true,
   def?: zm.mDefault<Map<NoInfer<T>, K>>,
 ): zm.mMap<T, K> {
-  const pointer = parseField(valueType);
-  if (!pointer) throw new Error("Unsupported map value type");
+  const pointer = parseMapValue(valueType);
 
   return {
     type: Map,
@@ -618,6 +617,38 @@ function parseMap<T, K>(
     default: def,
     required,
   };
+}
+
+/**
+ * Resolves a `z.map()`/`z.record()` value type into a Mongoose field
+ * definition for the Map's `of`.
+ *
+ * A plain `z.union([...])` value type (e.g. `z.record(z.string(),
+ * z.union([z.string(), z.number()]))`, the real production `params` shape)
+ * must NOT go through the generic `parseField` union handling, which
+ * collapses to the *first* union member's type - for a `Map<string, string
+ * | number>` that silently coerces every numeric value to a string on save
+ * (Mongoose's `Map`/`String` casting), which is silent data corruption, not
+ * just a missing feature. Instead, the value is stored as `Mixed` (so all
+ * union member types round-trip untouched) with a `validate` that re-checks
+ * each value against the original union schema via `.safeParse()`, so an
+ * invalid value is rejected rather than silently narrowed/coerced.
+ */
+function parseMapValue(valueType: ZodType): zm.mField {
+  if (zmAssert.union(valueType) && !zmAssert.discriminatedUnion(valueType)) {
+    return {
+      type: SchemaTypes.Mixed,
+      required: false,
+      validate: {
+        validator: (v: unknown) => valueType.safeParse(v).success,
+        message: "Value does not match any member of the declared union value type",
+      },
+    } as zm.mMixed<unknown>;
+  }
+
+  const pointer = parseField(valueType);
+  if (!pointer) throw new Error("Unsupported map value type");
+  return pointer;
 }
 
 function parseUUID(

@@ -96,12 +96,25 @@ Mongoose can't actually express:
   exactly the `.catch()` contract. This is instead implemented via a
   Mongoose `set` transform that re-parses the assigned value against the
   inner Zod type and substitutes the resolved catch value on failure.
+- **`z.record()`/`z.map()` with a union value type** (e.g.
+  `z.record(z.string(), z.union([z.string(), z.number()]))`): routing this
+  through the same "pick the first inner type" handling used for a
+  top-level union field would silently coerce every non-first-type value on
+  save (e.g. a numeric `Map` value getting cast to a string) - that's data
+  corruption, not just a missing feature. Instead, the value is stored as
+  `Schema.Types.Mixed` with a `validate` that re-checks each value against
+  the original union schema via `.safeParse()`, so every union member's
+  actual type round-trips untouched and a value outside the union is
+  rejected rather than silently coerced.
 
 ## Danger zone
 
 - ⚠️ Record (Being converted to `Map`)
 - ⚠️ Plain unions (`z.union()`, as opposed to `z.discriminatedUnion()` above)
-  are not supported by Mongoose and **will pick the first inner type**.
+  used as a **top-level field type** are not supported by Mongoose and
+  **will pick the first inner type**. A union used as a `z.record()`/
+  `z.map()` **value type** does not have this limitation - see "Design
+  notes" above.
 
 ## Not supported by Mongoose
 
