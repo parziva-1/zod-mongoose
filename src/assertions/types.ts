@@ -4,6 +4,7 @@ import type {
   ZodBoolean,
   ZodDate,
   ZodDefault,
+  ZodDiscriminatedUnion,
   ZodEnum,
   ZodLiteral,
   ZodMap,
@@ -47,4 +48,9 @@ export interface IAsserts {
   pipe(f: ZodType): f is ZodPipe;
   tuple(f: ZodType): f is ZodTuple;
   literal(f: ZodType): f is ZodLiteral;
+  /**
+   * Matches `z.discriminatedUnion()`. Must be checked before the generic
+   * `union` assertion - Zod v4 represents both as `ZodUnion` under the hood.
+   */
+  discriminatedUnion(f: ZodType): f is ZodDiscriminatedUnion;
 }

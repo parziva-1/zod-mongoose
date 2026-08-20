@@ -79,4 +79,17 @@ export const zmAssert: IAsserts = {
   literal(f: ZodType): f is any {
     return f._zod.def.type === "literal";
   },
+
+  /**
+   * `z.discriminatedUnion()` is represented by Zod v4 as a plain `ZodUnion`
+   * (`_zod.def.type === "union"`) that additionally carries a `discriminator`
+   * key on its def. It must be checked for *before* the generic `union`
+   * assertion in `parseField`, since a discriminated union also satisfies
+   * that check.
+   */
+  discriminatedUnion(f: ZodType): f is any {
+    return (
+      f._zod.def.type === "union" && typeof (f._zod.def as any).discriminator === "string"
+    );
+  },
 };

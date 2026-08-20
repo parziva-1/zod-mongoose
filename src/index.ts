@@ -321,6 +321,14 @@ function parseField<T>(
     );
   }
 
+  // Must run before the generic `union` check below - Zod v4 represents
+  // `z.discriminatedUnion()` as a `ZodUnion` with an extra `discriminator`
+  // key, so it would otherwise match the plain-union branch and silently
+  // collapse to its first variant.
+  if (zmAssert.discriminatedUnion(field)) {
+    return parseDiscriminatedUnion(field, required, def);
+  }
+
   if (zmAssert.union(field)) {
     const options = (field as any)._zod.def.options as ZodType[];
     const firstOption = options[0];
@@ -630,6 +638,35 @@ function parseLiteral(values: unknown[], required = true, def?: unknown): zm.mFi
     required,
     default: def as unknown as any,
     validate: { validator: (v: unknown) => values.includes(v), message },
+  };
+}
+
+/**
+ * `z.discriminatedUnion()` models real polymorphic documents (variants that
+ * share a discriminant key but otherwise diverge in shape), which Mongoose
+ * has no first-class support for on a plain nested field (Mongoose's own
+ * "discriminator" feature only applies to top-level models / array
+ * subdocuments, not to an arbitrary object-valued field). Rather than pick
+ * one variant's shape and lose the others (as the plain `union` handling
+ * does), this maps the field to `Mixed` and validates it against the
+ * *entire* original discriminated-union schema via `.safeParse()` - which
+ * already implements exactly the "dispatch on the discriminant, then
+ * validate against the matching variant" behavior this needs, so there is no
+ * reason to reimplement it.
+ */
+function parseDiscriminatedUnion(
+  field: ZodType,
+  required = true,
+  def?: unknown,
+): zm.mMixed<unknown> {
+  return {
+    type: SchemaTypes.Mixed,
+    required,
+    default: def as unknown as any,
+    validate: {
+      validator: (v: unknown) => field.safeParse(v).success,
+      message: "Value does not match any variant of the discriminated union",
+    },
   };
 }
 

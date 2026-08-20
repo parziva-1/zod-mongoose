@@ -926,3 +926,37 @@ describe("z.literal()", () => {
     ).toBeDefined();
   });
 });
+
+describe("z.discriminatedUnion()", () => {
+  const zShape = z.object({
+    payload: z.discriminatedUnion("type", [
+      z.object({ type: z.literal("email"), address: z.string() }),
+      z.object({ type: z.literal("sms"), phone: z.string() }),
+    ]),
+  });
+
+  test("maps to Mixed and validates against whichever variant matches the discriminant", () => {
+    const schema = zodSchema(zShape);
+    const Model = model("DiscriminatedUnionPayload", schema);
+
+    expect((<any>schema.obj.payload).type).toBe(SchemaTypes.Mixed);
+
+    const email = new Model({ payload: { type: "email", address: "a@b.com" } });
+    expect(email.validateSync()).toBeUndefined();
+
+    const sms = new Model({ payload: { type: "sms", phone: "123" } });
+    expect(sms.validateSync()).toBeUndefined();
+  });
+
+  test("rejects a payload whose fields don't match its own discriminant variant", () => {
+    const schema = zodSchema(zShape);
+    const Model = model("DiscriminatedUnionPayloadInvalid", schema);
+
+    // `type: "email"` but shaped like the "sms" variant.
+    const mismatched = new Model({ payload: { type: "email", phone: "123" } });
+    expect(mismatched.validateSync()?.errors.payload).toBeDefined();
+
+    const unknownVariant = new Model({ payload: { type: "carrier-pigeon" } });
+    expect(unknownVariant.validateSync()?.errors.payload).toBeDefined();
+  });
+});
