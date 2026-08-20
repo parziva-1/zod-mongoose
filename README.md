@@ -27,8 +27,9 @@ bun add @zodyac/zod-mongoose
 ## Breaking changes
 
 > [!WARNING]
-> If you were using `zId`, `zUUID`, `z.objectId()`, `z.mongoUUID()` before,
-> please replace those with `zId()` and `zUUID()`.
+> Starting with v5, this package requires **Zod v4** (`zod@^4.0.0`) and no
+> longer supports Zod v3 at all. If you're still on Zod v3, stay on the 4.x
+> line of this package until you migrate your schemas to Zod v4.
 
 - `zId` is now `zId(ref?)`
 - `zUUID` is now `zUUID()`
