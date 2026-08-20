@@ -322,7 +322,11 @@ function parseField<T>(
 
   if (zmAssert.optional(field)) {
     const innerType = (field as any)._zod.def.innerType as ZodType;
-    return parseField(innerType, false, undefined);
+    // Forward whatever `def` this call already carries (e.g. from an outer
+    // `.default()` in a `.optional().default(x)` chain) instead of always
+    // discarding it - Mongoose's `default` must survive regardless of
+    // whether `.optional()` or `.default()` comes first in the chain.
+    return parseField(innerType, false, def);
   }
 
   if (zmAssert.nullable(field)) {

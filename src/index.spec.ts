@@ -1071,3 +1071,39 @@ describe("z.catch()", () => {
     expect(bad.count).toBe(-1);
   });
 });
+
+// Regression tests for bugs found by an integration-test project that
+// replicated real production Mongoose model shapes
+// (spybee-backend-v3-hono's Project/Notification models) against this fork.
+// Each test mirrors the exact production field shape rather than a
+// simplified toy case.
+describe("Regression: production default-value bugs", () => {
+  test("bug #1 - .optional().default(x) preserves the Mongoose default (production `address`/`description` shape)", () => {
+    const zObj = z.object({
+      address: z.string().optional().default(""),
+      description: z.string().optional().default(""),
+    });
+    const schema = zodSchema(zObj);
+    const Model = model("Bug1OptionalThenDefault", schema);
+
+    const doc = new Model({});
+    expect(doc.address).toBe("");
+    expect(doc.description).toBe("");
+    expect(doc.validateSync()).toBeUndefined();
+
+    // The reverse chain order (`.default(x).optional()`) already worked and
+    // must keep working.
+    const zReversed = z.object({ address: z.string().default("").optional() });
+    const ReversedModel = model("Bug1DefaultThenOptional", zodSchema(zReversed));
+    expect(new ReversedModel({}).address).toBe("");
+
+    // The production `lastUpdated` shape nests `.optional()` one level
+    // further in (`.optional().nullable().default(null)`) and must also
+    // preserve its default.
+    const zNested = z.object({
+      lastUpdated: z.date().optional().nullable().default(null),
+    });
+    const NestedModel = model("Bug1NestedOptionalNullableDefault", zodSchema(zNested));
+    expect(new NestedModel({}).lastUpdated).toBeNull();
+  });
+});

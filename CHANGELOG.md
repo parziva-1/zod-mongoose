@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
+### Fixed
+- **`.optional().default(x)` no longer silently drops the Mongoose
+  `default`.** `parseField`'s `ZodOptional` branch discarded whatever `def`
+  had been passed down from an outer `.default()`, so the default only
+  survived when `.default()` came after `.optional()` in the chain. It now
+  forwards `def` through regardless of chain order (including deeper
+  chains like `.optional().nullable().default(null)`).
 
 ## 5.0.0 - 2026-08-20
 ### Breaking
