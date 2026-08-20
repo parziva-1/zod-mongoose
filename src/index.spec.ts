@@ -631,6 +631,88 @@ describe("Validation", () => {
   });
 });
 
+describe("Default values", () => {
+  test("Static default value should be preserved for string fields", () => {
+    const zObj = z.object({
+      role: z.string().default("member"),
+    });
+    const schema = zodSchema(zObj);
+
+    expect((<any>schema.obj.role).type).toBe(String);
+    expect((<any>schema.obj.role).required).toBe(true);
+    expect(typeof (<any>schema.obj.role).default).toBe("function");
+    expect((<any>schema.obj.role).default()).toBe("member");
+  });
+
+  test("Factory-function default should be re-evaluated on every call", () => {
+    let counter = 0;
+    const zObj = z.object({
+      seq: z.number().default(() => ++counter),
+    });
+    const schema = zodSchema(zObj);
+
+    expect(typeof (<any>schema.obj.seq).default).toBe("function");
+    expect((<any>schema.obj.seq).default()).toBe(1);
+    expect((<any>schema.obj.seq).default()).toBe(2);
+    expect((<any>schema.obj.seq).default()).toBe(3);
+  });
+
+  test("Factory-function default returning an array should produce a fresh array per call", () => {
+    const zObj = z.object({
+      tags: z.array(z.string()).default(() => ["seed"]),
+    });
+    const schema = zodSchema(zObj);
+
+    const first = (<any>schema.obj.tags).default();
+    const second = (<any>schema.obj.tags).default();
+
+    expect(first).toEqual(["seed"]);
+    expect(first).not.toBe(second);
+  });
+});
+
+describe("Optional + nullable combinations", () => {
+  test("optional().nullable() should be not required with a null default", () => {
+    const zObj = z.object({
+      note: z.string().optional().nullable(),
+    });
+    const schema = zodSchema(zObj);
+
+    expect((<any>schema.obj.note).type).toBe(String);
+    expect((<any>schema.obj.note).required).toBe(false);
+  });
+
+  test("nullable().optional() should be not required with a null default", () => {
+    const zObj = z.object({
+      note: z.string().nullable().optional(),
+    });
+    const schema = zodSchema(zObj);
+
+    expect((<any>schema.obj.note).type).toBe(String);
+    expect((<any>schema.obj.note).required).toBe(false);
+  });
+
+  test("nullable() with an explicit default should keep the provided default over null", () => {
+    const zObj = z.object({
+      status: z.string().nullable().default("active"),
+    });
+    const schema = zodSchema(zObj);
+
+    expect((<any>schema.obj.status).required).toBe(false);
+    expect((<any>schema.obj.status).default()).toBe("active");
+  });
+
+  test("bare nullable() without a default falls back to a null default", () => {
+    const zObj = z.object({
+      status: z.string().nullable(),
+    });
+    const schema = zodSchema(zObj);
+
+    expect((<any>schema.obj.status).required).toBe(false);
+    expect((<any>schema.obj.status).default()).toBe(null);
+  });
+});
+
 describe("Preprocess and transform effects", () => {
   test("Preprocess effects", () => {
     const zToNumberPreprocess = z.object({
@@ -666,5 +748,58 @@ describe("Preprocess and transform effects", () => {
 
     expect((<any>upcaseTransformSchema.obj.name).type).toBe(String);
     expect((<any>numberAddTransformSchema.obj.count).type).toBe(Number);
+  });
+
+  test("Refine-before-transform is preserved", () => {
+    const zObj = z.object({
+      value: z
+        .string()
+        .refine((v) => v.length > 2, "too short before")
+        .transform((v) => v.toUpperCase()),
+    });
+
+    const schema = zodSchema(zObj);
+
+    expect((<any>schema.obj.value).validate).toBeDefined();
+    expect((<any>schema.obj.value).validate.validator).toBeInstanceOf(Function);
+    expect((<any>schema.obj.value).validate.message).toBe("too short before");
+  });
+
+  test("Refine-after-transform is preserved", () => {
+    const zObj = z.object({
+      value: z
+        .string()
+        .transform((v) => v.toUpperCase())
+        .refine((v) => v.length < 10, "too long after"),
+    });
+
+    const schema = zodSchema(zObj);
+
+    expect((<any>schema.obj.value).validate).toBeDefined();
+    expect((<any>schema.obj.value).validate.validator).toBeInstanceOf(Function);
+    expect((<any>schema.obj.value).validate.message).toBe("too long after");
+  });
+
+  test("KNOWN GAP: refine-before-and-after-transform only keeps the first (pre-transform) refinement", () => {
+    // When a schema is refined both before AND after a `.transform()`, only
+    // the refinement closest to the original (pre-transform) type currently
+    // survives parsing - the post-transform refinement is silently dropped.
+    // This is a documented limitation of the current introspection strategy,
+    // not (yet) a supported feature; this test pins the current behavior so
+    // any change to it is caught intentionally rather than by accident.
+    const zObj = z.object({
+      value: z
+        .string()
+        .refine((v) => v.length > 2, "too short before")
+        .transform((v) => v.toUpperCase())
+        .refine((v) => v.length < 10, "too long after"),
+    });
+
+    const schema = zodSchema(zObj);
+
+    expect((<any>schema.obj.value).validate).toBeDefined();
+    // Only the pre-transform refinement message survives.
+    expect((<any>schema.obj.value).validate.message).toBe("too short before");
+    expect((<any>schema.obj.value).validate.message).not.toBe("too long after");
   });
 });
