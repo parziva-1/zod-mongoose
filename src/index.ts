@@ -101,11 +101,12 @@ function parseObject<T extends ZodRawShape>(
 ): zm._Schema<T> | zm.mSubdocument<T> {
   const object: any = {};
   for (const [key, field] of Object.entries(obj.shape)) {
-    if (zmAssert.object(field)) {
-      object[key] = parseObject(field, true);
+    if (zmAssert.object(field as ZodType)) {
+      object[key] = parseObject(field as ZodObject<any>, true);
     } else {
-      const f = parseField(field);
-      if (!f) throw new Error(`Unsupported field type: ${field.constructor}`);
+      const f = parseField(field as ZodType);
+      if (!f)
+        throw new Error(`Unsupported field type: ${(field as ZodType).constructor}`);
 
       object[key] = f;
     }
@@ -121,8 +122,49 @@ function parseObject<T extends ZodRawShape>(
   return object;
 }
 
+/**
+ * Walks a schema's own `checks` array (Zod v4) and returns the metadata for
+ * the last `.refine()` custom check found, if any.
+ *
+ * Zod v4 no longer wraps refined schemas in a `ZodEffects`-like type: calling
+ * `.refine()` simply appends a `"custom"` check to the schema's own
+ * `_zod.def.checks` array (or, when chained after `.transform()`, to the
+ * resulting `ZodPipe`'s own `checks` array). The check object itself already
+ * carries the validator function (`fn`) and a normalized error accessor
+ * (`error`), so there is no need to monkey-patch `refine()` to capture this
+ * metadata as was necessary under Zod v3.
+ */
+function extractRefinement<T>(field: ZodType): zm.EffectValidator<T> | undefined {
+  const checks = (field as any)._zod?.def?.checks as any[] | undefined;
+  if (!checks || checks.length === 0) return undefined;
+
+  for (let i = checks.length - 1; i >= 0; i--) {
+    const check = checks[i];
+    const checkDef = check?._zod?.def;
+    if (!checkDef || checkDef.check !== "custom") continue;
+
+    let message: string | undefined;
+    if (typeof checkDef.error === "function") {
+      try {
+        message = checkDef.error({});
+      } catch {
+        message = undefined;
+      }
+    } else if (typeof checkDef.error === "string") {
+      message = checkDef.error;
+    }
+
+    return {
+      validator: checkDef.fn,
+      message,
+    };
+  }
+
+  return undefined;
+}
+
 function parseField<T>(
-  field: ZodType<T>,
+  field: ZodType,
   required = true,
   def?: zm.mDefault<T>,
   refinement?: zm.EffectValidator<T>,
@@ -144,42 +186,46 @@ function parseField<T>(
   }
 
   if (zmAssert.object(field)) {
-    return parseObject(field, required);
+    return parseObject(field as ZodObject<any>, required);
   }
 
+  const ownRefinement = extractRefinement<T>(field) ?? refinement;
+
   if (zmAssert.number(field)) {
-    const isUnique = field.__zm_unique ?? false;
-    const isSparse = field.__zm_sparse ?? false;
+    const numberField = field as ZodNumber;
+    const meta = numberField.meta() as any;
+    const isUnique = meta?.__zm_unique ?? false;
+    const isSparse = meta?.__zm_sparse ?? false;
     return parseNumber(
-      field,
+      numberField,
       required,
       def as zm.mDefault<number>,
       isUnique,
-      refinement as zm.EffectValidator<number>,
+      ownRefinement as zm.EffectValidator<number>,
       isSparse,
     );
   }
 
   if (zmAssert.string(field)) {
-    const isUnique = field.__zm_unique ?? false;
-    const isSparse = field.__zm_sparse ?? false;
+    const stringField = field as ZodString;
+    const meta = stringField.meta() as any;
+    const isUnique = meta?.__zm_unique ?? false;
+    const isSparse = meta?.__zm_sparse ?? false;
     return parseString(
-      field,
+      stringField,
       required,
       def as zm.mDefault<string>,
       isUnique,
-      refinement as zm.EffectValidator<string>,
+      ownRefinement as zm.EffectValidator<string>,
       isSparse,
     );
   }
 
   if (zmAssert.enumerable(field)) {
-    return parseEnum(Object.keys(field.Values), required, def as zm.mDefault<string>);
-  }
-
-  if (zmAssert.nativeEnumerable(field)) {
+    // Zod v4 represents both `z.enum()` and `z.nativeEnum()` as `ZodEnum`,
+    // exposing the same values via the `.enum` map in both cases.
     return parseEnum(
-      Object.values(field._def.values),
+      Object.values((<any>field).enum),
       required,
       def as zm.mDefault<string>,
     );
@@ -190,43 +236,55 @@ function parseField<T>(
   }
 
   if (zmAssert.date(field)) {
-    const isUnique = field.__zm_unique ?? false;
-    const isSparse = field.__zm_sparse ?? false;
+    const dateField = field as any;
+    const meta = dateField.meta?.() as any;
+    const isUnique = meta?.__zm_unique ?? false;
+    const isSparse = meta?.__zm_sparse ?? false;
     return parseDate(
       required,
       def as zm.mDefault<Date>,
-      refinement as zm.EffectValidator<Date>,
+      ownRefinement as zm.EffectValidator<Date>,
       isUnique,
       isSparse,
     );
   }
 
   if (zmAssert.array(field)) {
+    const arrayField = field as any;
     return parseArray(
-      field.element,
+      arrayField.element,
       required,
       def as zm.mDefault<T extends Array<infer K> ? K[] : never>,
     );
   }
 
   if (zmAssert.def(field)) {
-    return parseField(field._def.innerType, required, field._def.defaultValue);
+    const defField = field as any;
+    const innerType = defField._zod.def.innerType as ZodType;
+    // Zod v4 stores `defaultValue` behind a getter, re-evaluating any factory
+    // function passed to `.default()` on every access - wrap it the same way
+    // so a fresh value is produced per document, matching Zod v3 behavior
+    // (where `_def.defaultValue` was already a `() => T` callback).
+    return parseField(innerType, required, () => defField._zod.def.defaultValue);
   }
 
   if (zmAssert.optional(field)) {
-    return parseField(field._def.innerType, false, undefined);
+    const innerType = (field as any)._zod.def.innerType as ZodType;
+    return parseField(innerType, false, undefined);
   }
 
   if (zmAssert.nullable(field)) {
+    const innerType = (field as any)._zod.def.innerType as ZodType;
     return parseField(
-      field._def.innerType,
+      innerType,
       false,
       (typeof def !== "undefined" ? def : () => null) as zm.mDefault<null>,
     );
   }
 
   if (zmAssert.union(field)) {
-    return parseField(field._def.options[0]);
+    const options = (field as any)._zod.def.options as ZodType[];
+    return parseField(options[0]);
   }
 
   if (zmAssert.any(field)) {
@@ -234,29 +292,31 @@ function parseField<T>(
   }
 
   if (zmAssert.mapOrRecord(field)) {
+    const mapField = field as any;
     return parseMap(
-      field.valueSchema,
+      mapField.valueType,
       required,
       def as zm.mDefault<
         Map<
-          zm.UnwrapZodType<typeof field.keySchema>,
-          zm.UnwrapZodType<typeof field.valueSchema>
+          zm.UnwrapZodType<typeof mapField.keyType>,
+          zm.UnwrapZodType<typeof mapField.valueType>
         >
       >,
     );
   }
 
-  if (zmAssert.effect(field)) {
-    const effect = field._def.effect;
+  if (zmAssert.pipe(field)) {
+    // Zod v4 represents both `.transform()` and `z.preprocess()` as a
+    // `ZodPipe` under the hood:
+    //   - `.transform()`  -> pipe(originalSchema, ZodTransform)
+    //   - `z.preprocess()` -> pipe(ZodTransform, targetSchema)
+    // In both cases, the side that is NOT a `ZodTransform` carries the real
+    // structural type (string/number/date/...) we need to introspect.
+    const pipeDef = (field as any)._zod.def as { in: ZodType; out: ZodType };
+    const inIsTransform = (pipeDef.in as any)._zod.def.type === "transform";
+    const target = inIsTransform ? pipeDef.out : pipeDef.in;
 
-    if (effect.type === "refinement") {
-      const validation = (<any>effect).__zm_validation as zm.EffectValidator<T>;
-      return parseField(field._def.schema, required, def, validation);
-    }
-
-    if (effect.type === "preprocess" || effect.type === "transform") {
-      return parseField(field._def.schema, required, def, refinement);
-    }
+    return parseField(target, required, def, ownRefinement as zm.EffectValidator<T>);
   }
 
   return null;
@@ -273,8 +333,10 @@ function parseNumber(
   const output: zm.mNumber = {
     type: Number,
     default: def,
-    min: field.minValue ?? undefined,
-    max: field.maxValue ?? undefined,
+    // Zod v4's `minValue`/`maxValue` getters default to `-Infinity`/`Infinity`
+    // (not `null`, as in Zod v3) when no `.min()`/`.max()` check is present.
+    min: Number.isFinite(field.minValue) ? (field.minValue ?? undefined) : undefined,
+    max: Number.isFinite(field.maxValue) ? (field.maxValue ?? undefined) : undefined,
     required,
     unique,
     sparse,
@@ -368,7 +430,7 @@ function parseObjectId(
 }
 
 function parseArray<T>(
-  element: ZodType<T>,
+  element: ZodType,
   required = true,
   def?: zm.mDefault<T[]>,
 ): zm.mArray<T> {
@@ -382,7 +444,7 @@ function parseArray<T>(
 }
 
 function parseMap<T, K>(
-  valueType: ZodType<K>,
+  valueType: ZodType,
   required = true,
   def?: zm.mDefault<Map<NoInfer<T>, K>>,
 ): zm.mMap<T, K> {
