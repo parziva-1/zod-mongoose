@@ -1,6 +1,6 @@
 {
   "name": "@parziva-1/zod-mongoose",
-  "version": "5.1.0",
+  "version": "5.1.1",
   "description": "A library that allows you to generate mongoose schemas from zod objects. Fork of @zodyac/zod-mongoose with Zod v4 support.",
   "scripts": {
     "test": "jest",

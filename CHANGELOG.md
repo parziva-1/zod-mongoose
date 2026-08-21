@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.1.1
+
+### Patch Changes
+
+- [`41903a4`](https://github.com/parziva-1/zod-mongoose/commit/41903a49db96557be2a6a16c2152a8596e470d59) - Fix `toPartialUpdateSchema()`'s inferred output type: each field now keeps its specific Zod type (enum literal union, string, number, nested object, ...) instead of collapsing to a generic `ZodType`. Runtime behavior is unchanged — this only fixes TypeScript inference, which was severe enough to break real call sites (e.g. `body.status` inferring as `{}`, which broke `allowed.includes(body.status)` when adopting this in spybee-backend-v3-hono).
+
 ## 5.1.0
 
 ### Minor Changes
