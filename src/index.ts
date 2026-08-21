@@ -1,5 +1,13 @@
 import { Schema, type SchemaOptions, SchemaTypes, type Types } from "mongoose";
-import type { ZodNumber, ZodObject, ZodRawShape, ZodString, ZodType, z } from "zod";
+import type {
+  ZodNumber,
+  ZodObject,
+  ZodOptional,
+  ZodRawShape,
+  ZodString,
+  ZodType,
+} from "zod";
+import { z } from "zod";
 
 import zmAssert from "./assertions/assertions.js";
 import type { zm } from "./mongoose.types.js";
@@ -92,6 +100,76 @@ export function zodSchema<T extends ZodRawShape>(
  */
 export function zodSchemaRaw<T extends ZodRawShape>(schema: ZodObject<T>): zm._Schema<T> {
   return parseObject(schema, true) as zm._Schema<T>;
+}
+
+/**
+ * Builds a "partial update" variant of a full model schema, for use as a
+ * PUT/PATCH request-body schema: every field is made optional, and any
+ * `.default(...)` on a field is stripped first.
+ *
+ * Reusing a model field directly as `ModelSchema.shape.field.optional()` for
+ * a partial-update body looks safe but isn't: in Zod v4, chaining
+ * `.optional()` onto a `ZodDefault` does NOT make an absent field parse to
+ * `undefined` - it still applies the inner default. A handler that then
+ * mass-writes the parsed body (`doc.set(body)`, `Model.findByIdAndUpdate(id,
+ * body)`, `Object.assign(doc, body)`, ...) ends up silently resetting every
+ * omitted defaulted field back to its default value on every partial update,
+ * clobbering whatever was actually stored.
+ *
+ * `toPartialUpdateSchema` walks the schema's own fields, strips any
+ * `.default()` wherever it appears in the chain (including inside
+ * `.optional()`/`.nullable()`), and re-wraps each field in `.optional()` - so
+ * an absent field genuinely means "leave unchanged" for the caller.
+ *
+ * @example
+ * import { toPartialUpdateSchema } from '@parziva-1/zod-mongoose';
+ *
+ * const UpdateBodySchema = toPartialUpdateSchema(UserZodSchema.omit({
+ *   createdBy: true, // fields the client must never set go in .omit() first
+ * }));
+ */
+export function toPartialUpdateSchema<T extends ZodRawShape>(
+  schema: ZodObject<T>,
+): ZodObject<{ [K in keyof T]: ZodOptional<ZodType> }> {
+  const shape = schema.shape as T;
+  const newShape = {} as { [K in keyof T]: ZodOptional<ZodType> };
+
+  for (const key of Object.keys(shape) as (keyof T)[]) {
+    const field = shape[key] as ZodType;
+    const stripped = stripDefaults(field);
+    newShape[key] = (
+      zmAssert.optional(stripped) ? stripped : stripped.optional()
+    ) as ZodOptional<ZodType>;
+  }
+
+  return z.object(newShape);
+}
+
+/**
+ * Recursively removes any `.default(...)` from a field, including one
+ * nested inside `.optional()` / `.nullable()`. Returns the original field
+ * reference unchanged when no default is found at any level, so callers can
+ * cheaply tell "nothing changed" apart from "a default was stripped".
+ */
+function stripDefaults(field: ZodType): ZodType {
+  if (zmAssert.def(field)) {
+    const innerType = (field as any)._zod.def.innerType as ZodType;
+    return stripDefaults(innerType);
+  }
+
+  if (zmAssert.optional(field)) {
+    const innerType = (field as any)._zod.def.innerType as ZodType;
+    const strippedInner = stripDefaults(innerType);
+    return strippedInner === innerType ? field : strippedInner.optional();
+  }
+
+  if (zmAssert.nullable(field)) {
+    const innerType = (field as any)._zod.def.innerType as ZodType;
+    const strippedInner = stripDefaults(innerType);
+    return strippedInner === innerType ? field : z.nullable(strippedInner);
+  }
+
+  return field;
 }
 
 // Helpers

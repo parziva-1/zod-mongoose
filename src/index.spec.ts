@@ -1,6 +1,12 @@
 import { model, Schema, SchemaTypes, Types } from "mongoose";
 import { z } from "zod";
-import zodSchema, { extendZod, zId, zodSchemaRaw, zUUID } from "./index";
+import zodSchema, {
+  extendZod,
+  toPartialUpdateSchema,
+  zId,
+  zodSchemaRaw,
+  zUUID,
+} from "./index";
 
 extendZod(z);
 
@@ -1174,5 +1180,43 @@ describe("Regression: production default-value bugs", () => {
     const invalid = new Model({ params: { flag: true as unknown as string } });
     const err = invalid.validateSync();
     expect(err?.errors["params.flag"]).toBeDefined();
+  });
+
+  test("bug #5 - a defaulted field reused via .shape.field.optional() for a PUT body silently resets to its default on omission (production photogrammetry status/imagesCount shape)", () => {
+    const ModelSchema = z.object({
+      status: z.enum(["initial", "ready", "processing"]).default("initial"),
+      imagesCount: z.number().default(0),
+      bucketUrl: z.string().nullable().default(null),
+      title: z.string(),
+    });
+
+    // The naive (buggy) pattern several real routes used before this fix.
+    const naiveBuggyBody = z.object({
+      status: ModelSchema.shape.status.optional(),
+      imagesCount: ModelSchema.shape.imagesCount.optional(),
+      bucketUrl: ModelSchema.shape.bucketUrl.optional(),
+      title: ModelSchema.shape.title.optional(),
+    });
+    // A partial update that only touches `title` still gets every other
+    // field forced back to its default - the actual production bug.
+    expect(naiveBuggyBody.parse({ title: "renamed" })).toEqual({
+      status: "initial",
+      imagesCount: 0,
+      bucketUrl: null,
+      title: "renamed",
+    });
+
+    // toPartialUpdateSchema must NOT reproduce that: an omitted defaulted
+    // field stays genuinely absent.
+    const safeBody = toPartialUpdateSchema(ModelSchema);
+    expect(safeBody.parse({ title: "renamed" })).toEqual({ title: "renamed" });
+
+    // A field that's explicitly sent must still validate/round-trip.
+    expect(
+      safeBody.parse({ title: "renamed", status: "processing", imagesCount: 7 }),
+    ).toEqual({ title: "renamed", status: "processing", imagesCount: 7 });
+
+    // An invalid value for a real field must still be rejected.
+    expect(() => safeBody.parse({ status: "not-a-real-status" })).toThrow();
   });
 });
