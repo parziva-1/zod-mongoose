@@ -1219,4 +1219,40 @@ describe("Regression: production default-value bugs", () => {
     // An invalid value for a real field must still be rejected.
     expect(() => safeBody.parse({ status: "not-a-real-status" })).toThrow();
   });
+
+  test("bug #6 - toPartialUpdateSchema preserves each field's specific inferred type, not a generic ZodType (caught adopting this in spybee-backend-v3-hono: body.status collapsed to `{}`, breaking `allowed.includes(body.status)`)", () => {
+    const ModelSchema = z.object({
+      status: z.enum(["initial", "ready", "processing"]).default("initial"),
+      imagesCount: z.number().default(0),
+      title: z.string(),
+      nested: z.object({ flag: z.boolean() }).nullable().default(null),
+    });
+
+    const safeBody = toPartialUpdateSchema(ModelSchema);
+    const parsed = safeBody.parse({ title: "renamed", status: "processing" });
+
+    // Compile-time assertions: these variable declarations only typecheck if
+    // `toPartialUpdateSchema`'s inferred output keeps each field's real
+    // type (enum literal union / number / string), not a generic `unknown`
+    // or `{}`. If this regresses, `npm run typecheck` fails here even
+    // though the runtime behavior below still passes.
+    const statusTypeCheck: "initial" | "ready" | "processing" | undefined = parsed.status;
+    const imagesCountTypeCheck: number | undefined = parsed.imagesCount;
+    const titleTypeCheck: string | undefined = parsed.title;
+    const nestedTypeCheck: { flag: boolean } | null | undefined = parsed.nested;
+    expect(statusTypeCheck).toBe("processing");
+    expect(imagesCountTypeCheck).toBeUndefined();
+    expect(titleTypeCheck).toBe("renamed");
+    expect(nestedTypeCheck).toBeUndefined();
+
+    // A real caller pattern this bug broke: indexing a lookup table keyed by
+    // the field's literal union, and calling `.includes()` against it.
+    const VALID_TRANSITIONS: Record<string, string[]> = {
+      initial: ["ready", "processing"],
+    };
+    const allowed = VALID_TRANSITIONS.initial;
+    if (parsed.status) {
+      expect(allowed.includes(parsed.status)).toBe(true);
+    }
+  });
 });

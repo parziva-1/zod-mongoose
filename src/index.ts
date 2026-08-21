@@ -1,5 +1,7 @@
 import { Schema, type SchemaOptions, SchemaTypes, type Types } from "mongoose";
 import type {
+  ZodDefault,
+  ZodNullable,
   ZodNumber,
   ZodObject,
   ZodOptional,
@@ -103,6 +105,41 @@ export function zodSchemaRaw<T extends ZodRawShape>(schema: ZodObject<T>): zm._S
 }
 
 /**
+ * Type-level mirror of {@link stripDefaults}: recursively unwraps a
+ * `.default(...)` wherever it appears in the chain (including nested inside
+ * `.optional()`/`.nullable()`), preserving the original field's specific
+ * type instead of collapsing it to a generic `ZodType`. Without this, a
+ * caller reading a parsed field (e.g. `body.status`) back out would lose the
+ * field's real literal/union type.
+ */
+type StripDefault<T extends ZodType> =
+  T extends ZodDefault<infer Inner>
+    ? Inner extends ZodType
+      ? StripDefault<Inner>
+      : T
+    : T extends ZodOptional<infer Inner>
+      ? Inner extends ZodType
+        ? ZodOptional<StripDefault<Inner>>
+        : T
+      : T extends ZodNullable<infer Inner>
+        ? Inner extends ZodType
+          ? ZodNullable<StripDefault<Inner>>
+          : T
+        : T;
+
+type EnsureOptional<T extends ZodType> =
+  T extends ZodOptional<ZodType> ? T : ZodOptional<T>;
+
+// `ZodRawShape`'s value type is the lower-level `core.$ZodType`, not the
+// classic `ZodType` every real field actually is - this coerces it back so
+// `StripDefault`/`EnsureOptional` (both bound to the classic type) can be
+// applied to `T[K]` from a mapped type without a constraint violation.
+type AsZodType<T> = T extends ZodType ? T : ZodType;
+
+/** The type of a single field after `toPartialUpdateSchema` processes it. */
+type PartialUpdateField<T> = EnsureOptional<StripDefault<AsZodType<T>>>;
+
+/**
  * Builds a "partial update" variant of a full model schema, for use as a
  * PUT/PATCH request-body schema: every field is made optional, and any
  * `.default(...)` on a field is stripped first.
@@ -130,16 +167,16 @@ export function zodSchemaRaw<T extends ZodRawShape>(schema: ZodObject<T>): zm._S
  */
 export function toPartialUpdateSchema<T extends ZodRawShape>(
   schema: ZodObject<T>,
-): ZodObject<{ [K in keyof T]: ZodOptional<ZodType> }> {
+): ZodObject<{ [K in keyof T]: PartialUpdateField<T[K]> }> {
   const shape = schema.shape as T;
-  const newShape = {} as { [K in keyof T]: ZodOptional<ZodType> };
+  const newShape = {} as { [K in keyof T]: PartialUpdateField<T[K]> };
 
   for (const key of Object.keys(shape) as (keyof T)[]) {
     const field = shape[key] as ZodType;
     const stripped = stripDefaults(field);
     newShape[key] = (
       zmAssert.optional(stripped) ? stripped : stripped.optional()
-    ) as ZodOptional<ZodType>;
+    ) as PartialUpdateField<T[typeof key]>;
   }
 
   return z.object(newShape);
