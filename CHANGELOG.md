@@ -1,5 +1,15 @@
 # Changelog
 
+## 5.1.0
+
+### Minor Changes
+
+- [`90e44ae`](https://github.com/parziva-1/zod-mongoose/commit/90e44ae0c00a82a6af5af2eaebb737b9391a80b1) - Add `toPartialUpdateSchema()` to safely build a PUT/PATCH request-body schema from a full model schema.
+  
+  Reusing a model field directly as `ModelSchema.shape.field.optional()` (or calling `.partial()` on the whole model schema) for a partial-update body looks safe but isn't under Zod v4: chaining `.optional()` onto a `ZodDefault` does not make an absent field parse to `undefined` — it still applies the inner default. A handler that then mass-writes the parsed body (`doc.set(body)`, `Model.findByIdAndUpdate(id, body)`, ...) ends up silently resetting every omitted defaulted field back to its default value on every partial update, clobbering whatever was actually stored.
+  
+  `toPartialUpdateSchema(schema)` walks a model schema's fields, strips any `.default()` wherever it appears in the chain (including nested inside `.optional()`/`.nullable()`), and re-wraps each field in `.optional()` — so an absent field genuinely means "leave unchanged" downstream.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
