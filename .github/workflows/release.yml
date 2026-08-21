@@ -29,8 +29,12 @@ jobs:
           cache: "npm"
           registry-url: "https://registry.npmjs.org"
 
+      # Pinned, not `npm@latest`: npm 12 requires Node >=22.9.0, which
+      # breaks this job's Node 20.x runner (EBADENGINE, 2026-08-21). npm
+      # 11.5.1 is the actual minimum needed for OIDC trusted publishing and
+      # still supports Node ^20.17.0.
       - name: Ensure npm CLI supports trusted publishing (>=11.5.1)
-        run: npm install -g npm@latest
+        run: npm install -g npm@11.5.1
 
       - name: Install dependencies
         run: npm ci
