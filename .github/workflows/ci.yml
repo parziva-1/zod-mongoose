@@ -43,7 +43,7 @@ jobs:
         run: npm install --no-save --ignore-scripts mongoose@${{ matrix.mongoose }}
 
       - name: Show resolved versions
-        run: npm ls mongoose zod
+        run: npm ls mongoose zod || true  # matrix install intentionally differs from the devDependency pin
 
       - name: Lint
         run: npm run lint
